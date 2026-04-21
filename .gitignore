@@ -1,0 +1,15 @@
+node_modules/
+npm-debug.log*
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
+.idea/
+.vscode/
+
+# Runtime artifacts
+server/hashcat/
+server/*.potfile
+*.restore
+*.log

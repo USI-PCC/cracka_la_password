@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>La Fabbrica delle Password Magiche!</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="tab-container">
+            <button class="tablink active" onclick="openTab(event, 'UserInput')">✍️ Scrivi la Tua Password</button>
+            <button class="tablink" onclick="openTab(event, 'RandomGenerator')">🎲 Password Super Casuale</button>
+        </div>
+
+        <div id="UserInput" class="tabcontent" style="display:block;">
+            <h1>✨ Rendi Segreta la tua Password ✨</h1>
+            <div class="form-group">
+                <input type="text" id="password" placeholder="Scrivi qui la tua parola magica!">
+                <button onclick="generateHash()">Fai la Magia! 🎩</button>
+                <button id="toggleVisibilityButton" onclick="togglePasswordVisibility()">Nascondi 🙈</button>
+            </div>
+            <div class="result hidden">
+                <p>Ecco il tuo Codice Segreto: <span id="hashResult">...</span> 🤫</p>
+                <button onclick="copyToClipboard('hashResult', event)">Copia 📋</button>
+            </div>
+        </div>
+
+        <div id="RandomGenerator" class="tabcontent">
+            <h1>🎲 Crea una Password Casuale 🎲</h1>
+            <div class="form-group">
+                <label for="pwdLength">Quanto lunga? (numeri!)</label>
+                <input type="number" id="pwdLength" value="4" min="4" max="8">
+            </div>
+            <div class="form-group">
+                <input type="checkbox" id="useLowercase" checked>
+                <label for="useLowercase">Lettere piccoline (a-z)</label>
+            </div>
+            <div class="form-group">
+                <input type="checkbox" id="useUppercase">
+                <label for="useUppercase">Lettere grandi (A-Z)</label>
+            </div>
+            <div class="form-group">
+                <input type="checkbox" id="useNumbers">
+                <label for="useNumbers">Numeri (0-9)</label>
+            </div>
+            <button onclick="generateRandomPasswordAndHash()">Inventa Password e Codice! 🔮</button>
+            <div class="result hidden">
+                <p>La tua Nuova Password Super Casuale: <span id="randomPasswordResult">...</span> 🔑</p>
+                <p>Ecco il tuo Codice Segreto: <span id="randomHashResult">...</span> ✨</p>
+                <button onclick="copyToClipboard('randomHashResult', event)">Copia 📋</button>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>

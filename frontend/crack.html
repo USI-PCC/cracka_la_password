@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scopri i Segreti Nascosti!</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🔮 Crackiamo la Password! 🔮</h1>
+        <div class="form-group">
+            <input type="text" id="hashInput" placeholder="Scrivi qui il codice misterioso!">
+            <button class="spiral-button" onclick="crackHash()">Trova la Password! 🎯</button>
+        </div>
+        <div class="result hidden" id="resultDiv">
+            <p>La password super segreta è: <span class="highlight" id="crackedResult">...</span></p>
+            <p>Tempo trascorso: <span id="elapsedTime">...</span> secondi ⏱️</p>
+        </div>
+        <div class="computation-status hidden" id="computationStatus">
+            <p>Stato: <span id="statusMessage">In attesa...</span></p>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
