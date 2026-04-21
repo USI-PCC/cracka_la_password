@@ -1,0 +1,31 @@
+services:
+  cracka:
+    build:
+      context: .
+    image: cracka:latest
+    container_name: cracka
+    restart: unless-stopped
+    environment:
+      - PORT=3100
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      # Persist the hashcat potfile across restarts so previously cracked
+      # hashes return instantly. hashcat 7.x default on Linux is XDG_DATA_HOME.
+      - potfile:/root/.local/share/hashcat
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3100/index.html || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  potfile:
