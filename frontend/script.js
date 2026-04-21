@@ -55,7 +55,8 @@ function crackHash() {
         elapsedTimeElement.textContent = elapsedTime;
     }, 10);
     
-    const socket = new WebSocket('ws://blas.inf.usi.ch:3000/ws'); 
+    const wsScheme = location.protocol === 'https:' ? 'wss' : 'ws';
+    const socket = new WebSocket(`${wsScheme}://${location.host}/ws`); 
 
     socket.onopen = () => {
         resultElement.textContent = 'Dammi un attimo...';
