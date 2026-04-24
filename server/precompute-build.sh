@@ -21,6 +21,10 @@ set -euo pipefail
 KV_DIR="${KV_DIR:-/scratch/cracka_kv}"
 WORKERS="${WORKERS:-128}"
 PHASES="${PHASES:-0 1 2 3}"
+# Sort phase parallelism is intentionally much lower than WORKERS because
+# each parallel sort mmaps/qsorts a whole shard (~33 GB) in RAM. Default
+# of 4 keeps peak sort RAM around 130 GB.
+SORT_CONCURRENCY="${SORT_CONCURRENCY:-4}"
 HASHCAT="${HASHCAT:-/app/hashcat/hashcat}"
 MD5FILL="${MD5FILL:-/app/bin/md5fill_kv}"
 ENUMERATE_MD5="${ENUMERATE_MD5:-/app/bin/enumerate_md5}"
@@ -164,27 +168,46 @@ phase_3() {
 # ----- Sort phase ----------------------------------------------------------
 
 sort_shards() {
-    log "sort phase: merging + sorting 256 shards"
+    log "sort phase: merging + sorting 256 shards (concurrency=$SORT_CONCURRENCY)"
     local sort_tmp="${BUILD_DIR}/sort_tmp"
     mkdir -p "$sort_tmp"
 
     export KV_DIR SHARD_SORT BUILD_DIR sort_tmp
 
-    # Parallelize: xargs -P spawns up to $WORKERS concurrent shard sorts.
-    seq 0 255 | xargs -I{} -P "$WORKERS" bash -c '
+    # Sort parallelism is deliberately modest: each sort mmaps/qsorts a
+    # ~33 GB shard in RAM. Concurrency 4 ≈ 130 GB peak sort RAM.
+    # Per-shard cleanup frees BUILD_DIR chunks progressively so peak
+    # disk usage stays close to the final KV size (~8.5 TB) rather than
+    # doubling. Sort is idempotent: if KV_DIR/shard_XX.bin already has
+    # content (e.g. from a previous run), it is absorbed into the merge
+    # before re-sorting + dedupe.
+    seq 0 255 | xargs -I{} -P "$SORT_CONCURRENCY" bash -c '
         i=$0
         hex=$(printf "%02x" "$i")
         out="${KV_DIR}/shard_${hex}.bin"
         merged="${sort_tmp}/merged_${hex}.bin"
-        : > "$merged"
-        find "${BUILD_DIR}" -name "shard_${hex}.bin" -type f -print0 \
+
+        # Start merged with existing sorted KV if present (idempotence).
+        if [ -s "$out" ]; then
+            cp "$out" "$merged"
+        else
+            : > "$merged"
+        fi
+
+        # Append every BUILD_DIR chunk for this shard.
+        find "${BUILD_DIR}" -mindepth 2 -name "shard_${hex}.bin" -type f -print0 \
             | xargs -0 -r cat >> "$merged"
+
         if [ -s "$merged" ]; then
             "${SHARD_SORT}" --in "$merged" --out "$out"
         else
             : > "$out"
         fi
+
+        # Free space immediately: drop merged copy and all source chunks
+        # for this shard. Do not touch sibling shard files.
         rm -f "$merged"
+        find "${BUILD_DIR}" -mindepth 2 -name "shard_${hex}.bin" -type f -delete
     ' {}
 
     rm -rf "$sort_tmp"
