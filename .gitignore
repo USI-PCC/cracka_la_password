@@ -13,3 +13,8 @@ server/hashcat/
 server/*.potfile
 *.restore
 *.log
+
+# Assistant / planning artifacts — kept out of the public repo
+.claude/
+CLAUDE.md
+docs/superpowers/
