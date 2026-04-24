@@ -16,9 +16,12 @@ services:
       # Persist the hashcat potfile across restarts so previously cracked
       # hashes return instantly. hashcat 7.x default on Linux is XDG_DATA_HOME.
       - potfile:/root/.local/share/hashcat
-      # Pre-compute KV cache built by precompute-build.sh. Read-only so
-      # the server never modifies it — rebuilds happen offline.
-      - /scratch/cracka_kv:/scratch/cracka_kv:ro
+      # Pre-compute KV cache. Mounted read-write because the build
+      # script (precompute-build.sh) runs inside this same container and
+      # writes under /scratch/cracka_kv during the offline build phase.
+      # Safety: server code never opens the KV for writing — kvLookup.js
+      # uses fs.openSync(path, 'r') and server.js has no other KV path.
+      - /scratch/cracka_kv:/scratch/cracka_kv
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3100/index.html || exit 1"]
       interval: 30s
