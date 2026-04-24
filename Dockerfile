@@ -41,6 +41,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN mkdir -p /etc/OpenCL/vendors && \
     echo 'libnvidia-opencl.so.1' > /etc/OpenCL/vendors/nvidia.icd
 
+# hashcat v7.x dlopens the unversioned `libnvrtc.so` (and falls through to
+# `libnvrtc.so.1`), but the `cuda-nvrtc-13-0` apt package installs only
+# `libnvrtc.so.13` / `libnvrtc.so.13.0.88` — no unversioned symlink. Without
+# this link hashcat prints "Failed to initialize NVIDIA RTC library" and
+# falls back to OpenCL. Link the unversioned name to the installed SONAME
+# and refresh ldconfig.
+RUN ln -sf /usr/local/cuda/targets/x86_64-linux/lib/libnvrtc.so.13 \
+           /usr/local/cuda/targets/x86_64-linux/lib/libnvrtc.so && \
+    ldconfig
+
 WORKDIR /app
 
 # Copy the full built hashcat tree — server.js invokes `hashcat/hashcat` and
