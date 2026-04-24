@@ -7,6 +7,7 @@ services:
     restart: unless-stopped
     environment:
       - PORT=3100
+      - HASHCAT_DEVICES=1,2;3,4
     ports:
       - "127.0.0.1:3100:3100"
     volumes:
@@ -23,8 +24,9 @@ services:
       resources:
         reservations:
           devices:
-            - driver: nvidia
-              count: all
+            - driver: cdi
+              device_ids:
+                - nvidia.com/gpu=all
               capabilities: [gpu]
 
 volumes:
