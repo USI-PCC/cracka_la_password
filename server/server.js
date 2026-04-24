@@ -9,6 +9,21 @@ const port = Number(process.env.PORT) || 3100;
 
 const server = http.createServer(app);
 
+// --- hashcat device-slot assignment (round-robin per crack request) ---
+// HASHCAT_DEVICES = "slot1;slot2;..." where each slot is a comma-separated
+// hashcat device-id list (e.g. "1,2;3,4"). Empty/unset disables -d injection.
+const deviceSlots = (process.env.HASHCAT_DEVICES || '')
+    .split(';')
+    .map(s => s.trim())
+    .filter(Boolean);
+let deviceCursor = 0;
+const nextDeviceSlot = () => {
+    if (deviceSlots.length === 0) return null;
+    const slot = deviceSlots[deviceCursor % deviceSlots.length];
+    deviceCursor += 1;
+    return slot;
+};
+
 const log = (message, ...args) => {
     const timestamp = new Date().toISOString();
     console.log(`\x1b[32m[${timestamp}]\x1b[0m\n${message}\n`, ...args);
@@ -46,6 +61,7 @@ wss.on('connection', (ws) => {
         }
 
         const hash = parsedMessage.hash;
+        const assignedDevices = nextDeviceSlot();
         log('Received hash for cracking - Hash: %s', hash);
 
         if (!hash) {
@@ -67,7 +83,7 @@ wss.on('connection', (ws) => {
             log('Starting second hashcat process (brute-force) for hash: %s', hash);
             ws.send(JSON.stringify({ message: 'Proviamo con un attacco brute-force! 🔍' }));
             mode = 'brute-force';
-            currentHashcatProcess = spawn('hashcat/hashcat', [
+            const bfArgs = [
                 '-m', '0',
                 '-a', '3',
                 '-w', '4',
@@ -77,7 +93,9 @@ wss.on('connection', (ws) => {
                 '-i',
                 hash,
                 '?1?1?1?1?1?1?1?1?1?1'
-            ]);
+            ];
+            if (assignedDevices) bfArgs.push('-d', assignedDevices);
+            currentHashcatProcess = spawn('hashcat/hashcat', bfArgs);
 
             attachHashcatEventHandlers(currentHashcatProcess, () => {
                 if (!isCrackingCompleted) {
@@ -193,7 +211,7 @@ wss.on('connection', (ws) => {
             log('Hash not found in potfile, initiating first cracking process (combinator) - Hash: %s', hash);
             ws.send(JSON.stringify({ message: 'Proviamo con un attacco con dizionario! 📖' }));
             mode = 'dictionary';
-            currentHashcatProcess = spawn('hashcat/hashcat', [
+            const dictArgs = [
                 '-m', '0',
                 '-a', '1',
                 '-w', '4',
@@ -201,7 +219,9 @@ wss.on('connection', (ws) => {
                 hash,
                 'bruteforce.txt',
                 'bruteforce.txt'
-            ]);
+            ];
+            if (assignedDevices) dictArgs.push('-d', assignedDevices);
+            currentHashcatProcess = spawn('hashcat/hashcat', dictArgs);
             
             attachHashcatEventHandlers(currentHashcatProcess, (code) => {
                 if (!isCrackingCompleted) {
