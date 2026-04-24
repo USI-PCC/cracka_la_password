@@ -44,13 +44,23 @@ sanity_checks() {
 # ----- Phase runners -------------------------------------------------------
 
 # Phase 0: wordlist + rules. Single-threaded (throughput is tiny anyway).
+# Best-effort: missing rule file or wordlist is logged but not fatal, since
+# phases 1–3 are the real bulk and we don't want to forfeit them on a
+# path typo.
 phase_0() {
     log "phase 0: wordlist + rules"
+    if [ ! -f "$RULES" ]; then
+        log "phase 0 SKIPPED: rules file not found: $RULES"
+        return 0
+    fi
     local outdir="${BUILD_DIR}/phase0"
     mkdir -p "$outdir"
     # shellcheck disable=SC2086
-    "$HASHCAT" --stdout -a 0 -r "$RULES" $WORDLISTS \
-        | "$MD5FILL" --output-dir "$outdir"
+    if ! "$HASHCAT" --stdout -a 0 -r "$RULES" $WORDLISTS \
+            | "$MD5FILL" --output-dir "$outdir"; then
+        log "phase 0 FAILED (continuing with other phases)"
+        return 0
+    fi
     log "phase 0 done"
 }
 
