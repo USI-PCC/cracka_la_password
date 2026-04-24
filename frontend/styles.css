@@ -152,62 +152,6 @@ button:hover {
     display: none;
 }
 
-.tab-container {
-    overflow: hidden;
-    margin-bottom: 20px;
-    border-radius: 10px;
-    position: relative;
-    padding: 5px;
-}
-
-.tab-container button {
-    background-color: var(--yellow);
-    float: left;
-    border: 2px solid var(--bright-blue);
-    outline: none;
-    cursor: pointer;
-    padding: 14px 16px;
-    transition: 0.3s;
-    font-size: 17px;
-    font-weight: bold;
-    color: var(--bright-blue);
-    border-radius: 10px 10px 0 0;
-    box-shadow: 3px 3px 0px var(--orange);
-    position: relative;
-    top: 0;
-}
-
-.tab-container button:first-child {
-    float: left;
-}
-
-.tab-container button:last-child {
-    float: right;
-}
-
-.tab-container button:hover {
-    background-color: var(--orange);
-    color: white;
-    transform: scale(1.05);
-}
-
-.tab-container button.active {
-    background-color: var(--bright-blue);
-    color: white;
-    box-shadow: 3px 3px 0px var(--yellow);
-}
-
-.tabcontent {
-    display: none;
-    padding: 20px;
-    background-color: white;
-}
-
-.tab-container::after {
-    content: "";
-    clear: both;
-    display: table;
-}
 
 .computation-status {
     background-color: #f0f8ff;
@@ -245,4 +189,134 @@ button:hover {
     .link {
         font-size: 1.2em;
     }
+}
+
+/* ---------------- Section layout ---------------- */
+.intro {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.intro p {
+    color: #555;
+    font-size: 1.05em;
+}
+
+.lab-section {
+    margin-bottom: 40px;
+    padding: 20px;
+    border-top: 2px dashed var(--bright-blue);
+}
+
+.lab-section h2 {
+    color: var(--bright-blue);
+    text-shadow: 2px 2px var(--yellow);
+    margin-bottom: 8px;
+}
+
+.section-intro {
+    color: #555;
+    font-size: 0.95em;
+    margin-bottom: 20px;
+}
+
+/* Small utility button (e.g. the 🎲 filler) */
+.btn-small {
+    padding: 10px 14px;
+    font-size: 1.1em;
+    flex: 0 0 auto;
+    box-shadow: 3px 3px 0px var(--orange);
+}
+
+/* Random generator options collapse */
+.random-options {
+    border: 2px dashed var(--green);
+    border-radius: 12px;
+    padding: 10px 15px;
+    margin: 15px 0;
+    font-size: 0.95em;
+    color: #444;
+}
+
+.random-options summary {
+    cursor: pointer;
+    font-weight: bold;
+    color: var(--bright-blue);
+}
+
+.charset-options label {
+    margin-right: 12px;
+    font-weight: normal;
+}
+
+/* ---------------- Attack plan ---------------- */
+.plan {
+    margin: 25px 0;
+    padding: 18px;
+    background-color: #f7fbff;
+    border: 2px solid var(--bright-blue);
+    border-radius: 15px;
+    text-align: left;
+}
+
+.plan h3 {
+    margin: 0 0 12px 0;
+    color: var(--bright-blue);
+    font-size: 1.1em;
+}
+
+.step-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 8px;
+    border-radius: 10px;
+    transition: background-color 0.3s ease, opacity 0.3s ease;
+}
+
+.step-row + .step-row {
+    margin-top: 6px;
+}
+
+.step-row__icon {
+    font-size: 1.5em;
+    line-height: 1;
+    flex: 0 0 auto;
+    width: 1.5em;
+    text-align: center;
+}
+
+.step-row__body strong {
+    display: block;
+    color: #333;
+}
+
+.step-row__body p {
+    margin: 4px 0 0 0;
+    font-size: 0.9em;
+    color: #555;
+}
+
+/* Step states */
+.step-row--pending { opacity: 0.75; }
+.step-row--running { background-color: #fff7c2; }
+.step-row--running .step-row__icon {
+    display: inline-block;
+    animation: rotate 1s linear infinite;
+    transform-origin: center;
+}
+.step-row--done-hit { background-color: #dff7e9; }
+.step-row--done-miss { opacity: 0.65; }
+.step-row--skipped { opacity: 0.35; }
+.step-row--skipped .step-row__body p { color: #888; }
+
+/* ---------------- Crack input auto-fill pulse ---------------- */
+@keyframes pulseGlow {
+    0%   { box-shadow: 0 0 0 0 var(--pink); border-color: var(--pink); }
+    50%  { box-shadow: 0 0 14px 4px var(--pink); border-color: var(--pink); }
+    100% { box-shadow: 0 0 0 0 var(--green); border-color: var(--green); }
+}
+
+.crack-input--pulse {
+    animation: pulseGlow 1s ease-out 1;
 }
