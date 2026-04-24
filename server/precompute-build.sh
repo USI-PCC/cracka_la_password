@@ -57,8 +57,7 @@ phase_0() {
     mkdir -p "$outdir"
     # shellcheck disable=SC2086
     if ! "$HASHCAT" --stdout -a 0 -r "$RULES" \
-            --backend-ignore-cuda --backend-ignore-hip \
-            --backend-ignore-metal --backend-ignore-opencl \
+            --backend-ignore-cuda --backend-ignore-opencl \
             $WORDLISTS \
             | "$MD5FILL" --output-dir "$outdir"; then
         log "phase 0 FAILED (continuing with other phases)"
@@ -114,8 +113,7 @@ run_mask_phase() {
             # try to allocate CUDA contexts on the Blackwells and OOM.
             (
                 nice -n 19 "$HASHCAT" --stdout -a 3 $charset_arg \
-                    --backend-ignore-cuda --backend-ignore-hip \
-                    --backend-ignore-metal --backend-ignore-opencl \
+                    --backend-ignore-cuda --backend-ignore-opencl \
                     --session "$sess" "$mask" \
                 | nice -n 19 "$MD5FILL" --output-dir "$wdir"
             ) &
