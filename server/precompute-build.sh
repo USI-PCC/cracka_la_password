@@ -64,82 +64,98 @@ phase_0() {
     log "phase 0 done"
 }
 
-# Generic mask-phase runner. Splits the keyspace across $WORKERS workers.
+# Generic mask-phase runner. Hashcat v7 refuses --skip/--limit together
+# with --stdout, so we can't slice keyspace that way. Instead we fix the
+# FIRST CHARACTER of the mask per worker: workers run in parallel, each
+# covering one starting letter. This gives us N parallel workers per
+# length, where N = |first_chars|.
+#
+# Args:
+#   $1 phase_name    — subdir under $BUILD_DIR
+#   $2 charset_arg   — the -1/-2/-3/-4 custom charset declaration (may be empty)
+#   $3 len_min       — inclusive
+#   $4 len_max       — inclusive
+#   $5 first_chars   — string of characters used as the fixed first position
+#   $6 mask_token    — mask token for remaining positions ("?1", "?l", "?d")
 run_mask_phase() {
     local phase_name="$1"
-    local charset_arg="$2"    # e.g. '-1 ?l?u?d!@#$%&*+-_'
-    local mask="$3"           # e.g. ?1?1?1?1?1?1 (paired with -i for length ranges)
-    local incr_min="$4"       # "" if no -i, else numeric
-    local incr_max="$5"       # "" if no -i, else numeric
+    local charset_arg="$2"
+    local len_min="$3"
+    local len_max="$4"
+    local first_chars="$5"
+    local mask_token="$6"
 
-    log "phase ${phase_name}: mask='${mask}' charset_arg=\"${charset_arg}\""
+    log "phase ${phase_name}: lengths ${len_min}..${len_max} (|first_chars|=${#first_chars})"
     local outroot="${BUILD_DIR}/${phase_name}"
     mkdir -p "$outroot"
 
-    # Total keyspace reported by hashcat.
-    # shellcheck disable=SC2086
-    local ks
-    ks=$("$HASHCAT" --keyspace -a 3 $charset_arg "$mask") \
-        || die "hashcat --keyspace failed"
-    log "  keyspace=$ks"
+    local nchars=${#first_chars}
+    local len
+    for ((len=len_min; len<=len_max; len++)); do
+        local suffix=""
+        local j
+        for ((j=1; j<len; j++)); do suffix="${suffix}${mask_token}"; done
 
-    local slice=$(( (ks + WORKERS - 1) / WORKERS ))
-    local pids=()
-    for ((w=0; w<WORKERS; w++)); do
-        local skip=$(( w * slice ))
-        if [ "$skip" -ge "$ks" ]; then break; fi
-        local limit=$(( slice ))
-        if [ $(( skip + limit )) -gt "$ks" ]; then
-            limit=$(( ks - skip ))
-        fi
-        local wdir="${outroot}/worker_$(printf '%03d' "$w")"
-        mkdir -p "$wdir"
+        local pids=()
+        local i
+        for ((i=0; i<nchars; i++)); do
+            local c="${first_chars:$i:1}"
+            local mask="${c}${suffix}"
+            local wdir="${outroot}/len${len}_slot$(printf '%03d' "$i")"
+            mkdir -p "$wdir"
+            local sess="pre_${phase_name}_l${len}_s${i}_$$"
 
-        local -a inc_args=()
-        if [ -n "$incr_min" ] && [ -n "$incr_max" ]; then
-            inc_args=(-i --increment-min "$incr_min" --increment-max "$incr_max")
-        fi
+            # shellcheck disable=SC2086
+            (
+                nice -n 19 "$HASHCAT" --stdout -a 3 $charset_arg \
+                    --session "$sess" "$mask" \
+                | nice -n 19 "$MD5FILL" --output-dir "$wdir"
+            ) &
+            pids+=($!)
+        done
 
-        # shellcheck disable=SC2086
-        (
-            nice -n 19 "$HASHCAT" --stdout -a 3 $charset_arg \
-                "${inc_args[@]}" -s "$skip" -l "$limit" "$mask" \
-            | nice -n 19 "$MD5FILL" --output-dir "$wdir"
-        ) &
-        pids+=($!)
+        log "  len=$len: spawned ${#pids[@]} workers, waiting…"
+        local fail=0
+        local pid
+        for pid in "${pids[@]}"; do
+            if ! wait "$pid"; then fail=1; fi
+        done
+        [ "$fail" -eq 0 ] || die "worker(s) failed in ${phase_name} len=$len"
+        log "  len=$len done"
     done
 
-    log "  spawned ${#pids[@]} workers, waiting…"
-    local fail=0
-    for pid in "${pids[@]}"; do
-        if ! wait "$pid"; then fail=1; fi
-    done
-    [ "$fail" -eq 0 ] || die "one or more workers failed in ${phase_name}"
     log "phase ${phase_name} done"
 }
 
-# Phase 1: ?l?u?d + 10 symbols, length 1–6.
+# Phase 1: ?l?u?d + 10 symbols = 72-char custom charset, length 1–6.
+# first_chars enumerates all 72 alphabet members as the fixed first
+# position. Literal shell specials (!, $, &, *) are safe because the
+# string is single-quoted and never `eval`'d.
 phase_1() {
+    local chars='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&*+-_'
     run_mask_phase "phase1" \
-        "-1 ?l?u?d!@#\$%&*+-_" \
-        "?1?1?1?1?1?1" \
-        "1" "6"
+        '-1 ?l?u?d!@#$%&*+-_' \
+        1 6 \
+        "$chars" \
+        "?1"
 }
 
-# Phase 2: lowercase only, length 7–8.
+# Phase 2: lowercase only, length 7–8. 26 parallel workers per length.
 phase_2() {
     run_mask_phase "phase2" \
         "" \
-        "?l?l?l?l?l?l?l?l" \
-        "7" "8"
+        7 8 \
+        'abcdefghijklmnopqrstuvwxyz' \
+        "?l"
 }
 
-# Phase 3: digits only, length 1–8.
+# Phase 3: digits only, length 1–8. 10 parallel workers per length.
 phase_3() {
     run_mask_phase "phase3" \
         "" \
-        "?d?d?d?d?d?d?d?d" \
-        "1" "8"
+        1 8 \
+        '0123456789' \
+        "?d"
 }
 
 # ----- Sort phase ----------------------------------------------------------
