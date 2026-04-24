@@ -56,7 +56,10 @@ phase_0() {
     local outdir="${BUILD_DIR}/phase0"
     mkdir -p "$outdir"
     # shellcheck disable=SC2086
-    if ! "$HASHCAT" --stdout -a 0 -r "$RULES" $WORDLISTS \
+    if ! "$HASHCAT" --stdout -a 0 -r "$RULES" \
+            --backend-ignore-cuda --backend-ignore-hip \
+            --backend-ignore-metal --backend-ignore-opencl \
+            $WORDLISTS \
             | "$MD5FILL" --output-dir "$outdir"; then
         log "phase 0 FAILED (continuing with other phases)"
         return 0
@@ -106,8 +109,13 @@ run_mask_phase() {
             local sess="pre_${phase_name}_l${len}_s${i}_$$"
 
             # shellcheck disable=SC2086
+            # --stdout doesn't need a GPU backend — disable CUDA/HIP/Metal/
+            # OpenCL init explicitly, otherwise 72 parallel hashcats each
+            # try to allocate CUDA contexts on the Blackwells and OOM.
             (
                 nice -n 19 "$HASHCAT" --stdout -a 3 $charset_arg \
+                    --backend-ignore-cuda --backend-ignore-hip \
+                    --backend-ignore-metal --backend-ignore-opencl \
                     --session "$sess" "$mask" \
                 | nice -n 19 "$MD5FILL" --output-dir "$wdir"
             ) &
