@@ -3,55 +3,94 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>La Fabbrica delle Password Magiche!</title>
+    <title>Cracka la Password — Laboratorio</title>
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 </head>
 <body>
     <div class="container">
-        <div class="tab-container">
-            <button class="tablink active" onclick="openTab(event, 'UserInput')">✍️ Scrivi la Tua Password</button>
-            <button class="tablink" onclick="openTab(event, 'RandomGenerator')">🎲 Password Super Casuale</button>
-        </div>
+        <header class="intro">
+            <h1>🔐 Laboratorio delle chiavi</h1>
+            <p>Una piccola officina per creare e decifrare chiavi MD5.</p>
+        </header>
 
-        <div id="UserInput" class="tabcontent" style="display:block;">
-            <h1>✨ Rendi Segreta la tua Password ✨</h1>
-            <div class="form-group">
-                <input type="text" id="password" placeholder="Scrivi qui la tua parola magica!">
-                <button onclick="generateHash()">Fai la Magia! 🎩</button>
-                <button id="toggleVisibilityButton" onclick="togglePasswordVisibility()">Nascondi 🙈</button>
-            </div>
-            <div class="result hidden">
-                <p>Ecco il tuo Codice Segreto: <span id="hashResult">...</span> 🤫</p>
-                <button onclick="copyToClipboard('hashResult', event)">Copia 📋</button>
-            </div>
-        </div>
+        <!-- ================= MAKE ================= -->
+        <section class="lab-section" id="makeSection">
+            <h2>🔧 Crea una chiave</h2>
+            <p class="section-intro">Una password diventa una "chiave": una stringa che la rappresenta senza rivelarla.</p>
 
-        <div id="RandomGenerator" class="tabcontent">
-            <h1>🎲 Crea una Password Casuale 🎲</h1>
             <div class="form-group">
-                <label for="pwdLength">Quanto lunga? (numeri!)</label>
-                <input type="number" id="pwdLength" value="4" min="4" max="8">
+                <input type="text" id="password" placeholder="Scrivi una parola, o premi 🎲 per generarla">
+                <button type="button" id="randomButton" class="btn-small" onclick="fillRandom()">🎲</button>
             </div>
+
+            <details class="random-options" id="randomOptions">
+                <summary>Opzioni per la chiave casuale</summary>
+                <div class="form-group">
+                    <label for="pwdLength">Lunghezza</label>
+                    <input type="number" id="pwdLength" value="4" min="4" max="8">
+                </div>
+                <div class="form-group charset-options">
+                    <label><input type="checkbox" id="useLowercase" checked> minuscole (a-z)</label>
+                    <label><input type="checkbox" id="useUppercase"> maiuscole (A-Z)</label>
+                    <label><input type="checkbox" id="useNumbers"> numeri (0-9)</label>
+                </div>
+            </details>
+
+            <div class="form-group actions">
+                <button type="button" onclick="makeKey()">Genera la chiave 🔐</button>
+                <button type="button" id="toggleVisibilityButton" onclick="togglePasswordVisibility()">👁 Mostra</button>
+            </div>
+
+            <div class="result hidden" id="makeResult">
+                <p id="wordRow" class="hidden">Parola: <span id="wordResult">...</span></p>
+                <p>Chiave: <span id="hashResult">...</span></p>
+            </div>
+        </section>
+
+        <!-- ================= CRACK ================= -->
+        <section class="lab-section" id="crackSection">
+            <h2>🔍 Decifra una chiave</h2>
+            <p class="section-intro">Data una chiave, proviamo a risalire alla password. Il computer è veloce — vediamo quanto.</p>
+
             <div class="form-group">
-                <input type="checkbox" id="useLowercase" checked>
-                <label for="useLowercase">Lettere piccoline (a-z)</label>
+                <input type="text" id="hashInput" placeholder="Incolla una chiave (32 caratteri esadecimali)">
             </div>
-            <div class="form-group">
-                <input type="checkbox" id="useUppercase">
-                <label for="useUppercase">Lettere grandi (A-Z)</label>
+
+            <div class="form-group actions">
+                <button type="button" class="spiral-button" onclick="crackHash()">🚀 Avvia la decifratura</button>
             </div>
-            <div class="form-group">
-                <input type="checkbox" id="useNumbers">
-                <label for="useNumbers">Numeri (0-9)</label>
+
+            <div class="plan" id="attackPlan">
+                <h3>Piano di attacco</h3>
+                <div class="step-row step-row--pending" data-step="1">
+                    <span class="step-row__icon">⏳</span>
+                    <div class="step-row__body">
+                        <strong>① 📓 Archivio</strong>
+                        <p>Controlliamo se l'abbiamo già vista.</p>
+                    </div>
+                </div>
+                <div class="step-row step-row--pending" data-step="2">
+                    <span class="step-row__icon">⏳</span>
+                    <div class="step-row__body">
+                        <strong>② 📖 Dizionario</strong>
+                        <p>Proviamo combinazioni di parole comuni.</p>
+                    </div>
+                </div>
+                <div class="step-row step-row--pending" data-step="3">
+                    <span class="step-row__icon">⏳</span>
+                    <div class="step-row__body">
+                        <strong>③ 🔡 Forza bruta</strong>
+                        <p>Proviamo ogni combinazione di lettere e numeri, da 4 a 10.</p>
+                    </div>
+                </div>
             </div>
-            <button onclick="generateRandomPasswordAndHash()">Inventa Password e Codice! 🔮</button>
-            <div class="result hidden">
-                <p>La tua Nuova Password Super Casuale: <span id="randomPasswordResult">...</span> 🔑</p>
-                <p>Ecco il tuo Codice Segreto: <span id="randomHashResult">...</span> ✨</p>
-                <button onclick="copyToClipboard('randomHashResult', event)">Copia 📋</button>
+
+            <div class="result hidden" id="resultDiv">
+                <p>Password: <span class="highlight" id="crackedResult">...</span></p>
+                <p>Tempo: <span id="elapsedTime">...</span> s</p>
             </div>
-        </div>
+        </section>
     </div>
     <script src="script.js"></script>
 </body>
