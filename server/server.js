@@ -24,6 +24,15 @@ const nextDeviceSlot = () => {
     return slot;
 };
 
+// Unique session name per hashcat invocation. Every hashcat command (spawn
+// or --show exec) writes a pidfile/restorefile under its session dir; if
+// two invocations share the default session "hashcat" they collide with
+// "Already an instance running on pid N" even when the prior one has
+// already exited (stale or PID-reused pidfile). A unique session per
+// invocation eliminates the shared path.
+let sessionCounter = 0;
+const nextSession = () => `crk-${process.pid}-${++sessionCounter}`;
+
 const log = (message, ...args) => {
     const timestamp = new Date().toISOString();
     console.log(`\x1b[32m[${timestamp}]\x1b[0m\n${message}\n`, ...args);
@@ -95,6 +104,7 @@ wss.on('connection', (ws) => {
                 '?1?1?1?1?1?1?1?1?1?1'
             ];
             if (assignedDevices) bfArgs.push('-d', assignedDevices);
+            bfArgs.push('--session', nextSession());
             currentHashcatProcess = spawn('hashcat/hashcat', bfArgs);
 
             attachHashcatEventHandlers(currentHashcatProcess, () => {
@@ -153,7 +163,7 @@ wss.on('connection', (ws) => {
                 }
 
                 log('Attempting to retrieve password with --show for hash: %s', hash);
-                exec(`hashcat/hashcat -m 0 --show ${hash}`, (e, s_out, s_err) => {
+                exec(`hashcat/hashcat -m 0 --session ${nextSession()} --show ${hash}`, (e, s_out, s_err) => {
                     if (e) {
                         error('Failed to execute --show after hashcat process closed for %s: %s', hash, e.message);
                         if (s_err) {
@@ -192,7 +202,7 @@ wss.on('connection', (ws) => {
 
 
         log('Checking for existing hash in potfile - Hash: %s', hash);
-        exec(`hashcat/hashcat -m 0 --show ${hash}`, (err, stdout, stderr) => {
+        exec(`hashcat/hashcat -m 0 --session ${nextSession()} --show ${hash}`, (err, stdout, stderr) => {
             if (err) {
                 error('Failed to check existing hash: %s - Hash: %s', err.message, hash);
                 ws.send(JSON.stringify({ error: 'Ops... Ho sbagliato qualcosa mentre cercavo la tua password negli archivi... 🗄️' }));
@@ -221,6 +231,7 @@ wss.on('connection', (ws) => {
                 'bruteforce.txt'
             ];
             if (assignedDevices) dictArgs.push('-d', assignedDevices);
+            dictArgs.push('--session', nextSession());
             currentHashcatProcess = spawn('hashcat/hashcat', dictArgs);
             
             attachHashcatEventHandlers(currentHashcatProcess, (code) => {
