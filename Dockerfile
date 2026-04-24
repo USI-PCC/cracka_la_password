@@ -24,7 +24,7 @@ RUN make -B -j"$(nproc)"
 # stage so they ride into the runtime image without pulling build tools
 # into the final layers.
 WORKDIR /src/cracka-bin
-COPY server/src/md5fill_kv.c server/src/shard_sort.c server/src/Makefile ./
+COPY server/src/md5fill_kv.c server/src/shard_sort.c server/src/enumerate_md5.c server/src/Makefile ./
 RUN make
 
 # ---------- Stage 2: runtime ----------
@@ -67,6 +67,7 @@ COPY --from=hashcat-builder /src/hashcat /app/hashcat
 # Pre-compute helpers for the KV cache.
 COPY --from=hashcat-builder /src/cracka-bin/md5fill_kv /app/bin/md5fill_kv
 COPY --from=hashcat-builder /src/cracka-bin/shard_sort /app/bin/shard_sort
+COPY --from=hashcat-builder /src/cracka-bin/enumerate_md5 /app/bin/enumerate_md5
 
 # Install Node deps from the lockfile
 COPY server/package.json server/package-lock.json ./

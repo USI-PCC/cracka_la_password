@@ -23,6 +23,7 @@ WORKERS="${WORKERS:-128}"
 PHASES="${PHASES:-0 1 2 3}"
 HASHCAT="${HASHCAT:-/app/hashcat/hashcat}"
 MD5FILL="${MD5FILL:-/app/bin/md5fill_kv}"
+ENUMERATE_MD5="${ENUMERATE_MD5:-/app/bin/enumerate_md5}"
 SHARD_SORT="${SHARD_SORT:-/app/bin/shard_sort}"
 WORDLISTS="${WORDLISTS:-/app/bruteforce.txt /app/parole_uniche.txt}"
 RULES="${RULES:-/app/hashcat/rules/best64.rule}"
@@ -34,9 +35,10 @@ log()  { printf '[%s] %s\n' "$(date -u +%FT%TZ)" "$*"; }
 die()  { log "FATAL: $*"; exit 1; }
 
 sanity_checks() {
-    [ -x "$HASHCAT" ]    || die "hashcat not executable: $HASHCAT"
-    [ -x "$MD5FILL" ]    || die "md5fill_kv not executable: $MD5FILL"
-    [ -x "$SHARD_SORT" ] || die "shard_sort not executable: $SHARD_SORT"
+    [ -x "$HASHCAT" ]        || die "hashcat not executable: $HASHCAT"
+    [ -x "$MD5FILL" ]        || die "md5fill_kv not executable: $MD5FILL"
+    [ -x "$ENUMERATE_MD5" ]  || die "enumerate_md5 not executable: $ENUMERATE_MD5"
+    [ -x "$SHARD_SORT" ]     || die "shard_sort not executable: $SHARD_SORT"
     mkdir -p "$KV_DIR" "$BUILD_DIR"
     log "KV_DIR=$KV_DIR WORKERS=$WORKERS PHASES=\"$PHASES\""
 }
@@ -66,61 +68,64 @@ phase_0() {
     log "phase 0 done"
 }
 
-# Generic mask-phase runner. Hashcat v7 refuses --skip/--limit together
-# with --stdout, so we can't slice keyspace that way. Instead we fix the
-# FIRST CHARACTER of the mask per worker: workers run in parallel, each
-# covering one starting letter. This gives us N parallel workers per
-# length, where N = |first_chars|.
+# Generic mask-phase runner using our own enumerate_md5 binary.
+# We compute the keyspace for this (charset, length) directly (|charset|^length),
+# split it into $WORKERS contiguous slices, and spawn one enumerate_md5 per slice.
+# Full 128-way parallelism per length; no hashcat in the hot path.
 #
 # Args:
-#   $1 phase_name    — subdir under $BUILD_DIR
-#   $2 charset_arg   — the -1/-2/-3/-4 custom charset declaration (may be empty)
-#   $3 len_min       — inclusive
-#   $4 len_max       — inclusive
-#   $5 first_chars   — string of characters used as the fixed first position
-#   $6 mask_token    — mask token for remaining positions ("?1", "?l", "?d")
+#   $1 phase_name  — subdir under $BUILD_DIR
+#   $2 charset     — literal charset string (e.g. 'abc...xyz')
+#   $3 len_min     — inclusive
+#   $4 len_max     — inclusive
 run_mask_phase() {
     local phase_name="$1"
-    local charset_arg="$2"
+    local charset="$2"
     local len_min="$3"
     local len_max="$4"
-    local first_chars="$5"
-    local mask_token="$6"
 
-    log "phase ${phase_name}: lengths ${len_min}..${len_max} (|first_chars|=${#first_chars})"
+    local cs_len=${#charset}
+    log "phase ${phase_name}: lengths ${len_min}..${len_max} charset_size=${cs_len}"
     local outroot="${BUILD_DIR}/${phase_name}"
     mkdir -p "$outroot"
 
-    local nchars=${#first_chars}
     local len
     for ((len=len_min; len<=len_max; len++)); do
-        local suffix=""
+        # Keyspace for this length = cs_len^len. bash arithmetic is 64-bit;
+        # our largest is 72^6 = 1.4e11, well within int64.
+        local ks=1
         local j
-        for ((j=1; j<len; j++)); do suffix="${suffix}${mask_token}"; done
+        for ((j=0; j<len; j++)); do ks=$(( ks * cs_len )); done
+
+        # Pick worker count: for tiny keyspaces, single worker avoids fork cost.
+        local nw=$WORKERS
+        if [ "$ks" -lt "$((WORKERS * 4))" ]; then nw=1; fi
+
+        local slice=$(( (ks + nw - 1) / nw ))
+        log "  len=$len keyspace=$ks nworkers=$nw slice=$slice"
 
         local pids=()
-        local i
-        for ((i=0; i<nchars; i++)); do
-            local c="${first_chars:$i:1}"
-            local mask="${c}${suffix}"
-            local wdir="${outroot}/len${len}_slot$(printf '%03d' "$i")"
+        local w
+        for ((w=0; w<nw; w++)); do
+            local skip=$(( w * slice ))
+            [ "$skip" -ge "$ks" ] && break
+            local limit=$slice
+            [ $(( skip + limit )) -gt "$ks" ] && limit=$(( ks - skip ))
+            local wdir="${outroot}/len${len}_w$(printf '%03d' "$w")"
             mkdir -p "$wdir"
-            local sess="pre_${phase_name}_l${len}_s${i}_$$"
 
-            # shellcheck disable=SC2086
-            # --stdout doesn't need a GPU backend — disable CUDA/HIP/Metal/
-            # OpenCL init explicitly, otherwise 72 parallel hashcats each
-            # try to allocate CUDA contexts on the Blackwells and OOM.
             (
-                nice -n 19 "$HASHCAT" --stdout -a 3 $charset_arg \
-                    --backend-ignore-cuda --backend-ignore-opencl \
-                    --session "$sess" "$mask" \
-                | nice -n 19 "$MD5FILL" --output-dir "$wdir"
+                nice -n 19 "$ENUMERATE_MD5" \
+                    --charset "$charset" \
+                    --length "$len" \
+                    --skip "$skip" \
+                    --limit "$limit" \
+                    --output-dir "$wdir"
             ) &
             pids+=($!)
         done
 
-        log "  len=$len: spawned ${#pids[@]} workers, waiting…"
+        log "    spawned ${#pids[@]} workers, waiting…"
         local fail=0
         local pid
         for pid in "${pids[@]}"; do
@@ -133,35 +138,27 @@ run_mask_phase() {
     log "phase ${phase_name} done"
 }
 
-# Phase 1: ?l?u?d + 10 symbols = 72-char custom charset, length 1–6.
-# first_chars enumerates all 72 alphabet members as the fixed first
-# position. Literal shell specials (!, $, &, *) are safe because the
-# string is single-quoted and never `eval`'d.
+# Phase 1: ?l?u?d + 10 symbols = 72-char charset, length 1–6.
+# Literal !, $, &, *, + etc. are safe because the argv is passed as a
+# single-quoted shell argument and never `eval`'d.
 phase_1() {
-    local chars='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&*+-_'
     run_mask_phase "phase1" \
-        '-1 ?l?u?d!@#$%&*+-_' \
-        1 6 \
-        "$chars" \
-        "?1"
+        'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&*+-_' \
+        1 6
 }
 
-# Phase 2: lowercase only, length 7–8. 26 parallel workers per length.
+# Phase 2: lowercase only, length 7–8.
 phase_2() {
     run_mask_phase "phase2" \
-        "" \
-        7 8 \
         'abcdefghijklmnopqrstuvwxyz' \
-        "?l"
+        7 8
 }
 
-# Phase 3: digits only, length 1–8. 10 parallel workers per length.
+# Phase 3: digits only, length 1–8.
 phase_3() {
     run_mask_phase "phase3" \
-        "" \
-        1 8 \
         '0123456789' \
-        "?d"
+        1 8
 }
 
 # ----- Sort phase ----------------------------------------------------------

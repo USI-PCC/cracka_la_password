@@ -2,12 +2,15 @@ CC      ?= gcc
 CFLAGS  ?= -O2 -Wall -Wextra
 LDLIBS  ?= -lcrypto
 
-BINS = md5fill_kv shard_sort
+BINS = md5fill_kv shard_sort enumerate_md5
 
 .PHONY: all clean
 all: $(BINS)
 
 md5fill_kv: md5fill_kv.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDLIBS)
+
+enumerate_md5: enumerate_md5.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDLIBS)
 
 shard_sort: shard_sort.c
