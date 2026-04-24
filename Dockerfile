@@ -28,10 +28,18 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl gnupg python3 python3-pip wget \
+        cuda-nvrtc-13-0 \
     && curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && pip install --break-system-packages gpustat \
     && rm -rf /var/lib/apt/lists/*
+
+# Register the NVIDIA OpenCL ICD so hashcat's OpenCL backend can find the
+# platform. nvidia-container-toolkit in CDI mode does NOT auto-create this
+# file the way the legacy nvidia runtime did, and the CUDA runtime base
+# image doesn't ship it either.
+RUN mkdir -p /etc/OpenCL/vendors && \
+    echo 'libnvidia-opencl.so.1' > /etc/OpenCL/vendors/nvidia.icd
 
 WORKDIR /app
 
