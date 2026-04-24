@@ -73,8 +73,10 @@ COPY server/package.json server/package-lock.json ./
 RUN npm ci --omit=dev
 
 # App code
-COPY server/server.js ./
+COPY server/server.js server/kvLookup.js ./
 COPY server/bruteforce.txt server/parole_uniche.txt ./
+COPY server/precompute-build.sh /app/precompute-build.sh
+RUN chmod +x /app/precompute-build.sh
 
 # Frontend served by express.static('public')
 COPY frontend/ ./public/
