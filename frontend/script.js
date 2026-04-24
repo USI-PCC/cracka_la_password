@@ -52,6 +52,8 @@ function fillRandom() {
     lastValueWasRandom = true;
 }
 
+// Note: programmatic input.value = … does NOT fire 'input', so fillRandom's
+// assignment followed by lastValueWasRandom = true is safe.
 // When the user types manually, mark the value as non-random.
 document.addEventListener('DOMContentLoaded', () => {
     const input = document.getElementById('password');
@@ -104,7 +106,9 @@ function autofillCrackInput(hash) {
     const crackInput = document.getElementById('hashInput');
     crackInput.value = hash;
     crackInput.classList.remove('crack-input--pulse');
-    // Force reflow so the animation restarts on repeated generations.
+    // Force reflow so the CSS animation restarts on repeated generations.
+    // Without this, remove-class + add-class in the same tick gets batched
+    // and the animation does not replay.
     void crackInput.offsetWidth;
     crackInput.classList.add('crack-input--pulse');
 }
@@ -152,20 +156,35 @@ function setStepState(step, state) {
     el.dataset.enteredAt = String(performance.now());
 }
 
+// Tracks the one timer that may be waiting to leave a `running` row.
+// Shape: { step, id } | null
+let pendingTransition = null;
+
+function cancelPendingTransition() {
+    if (pendingTransition) {
+        clearTimeout(pendingTransition.id);
+        pendingTransition = null;
+    }
+}
+
 function resetPlan() {
+    cancelPendingTransition();
     [1, 2, 3].forEach(s => setStepState(s, 'pending'));
 }
 
 // Delay any "leave running" transition by at least RUNNING_MIN_MS.
 function scheduleTransition(step, nextState, cb) {
+    cancelPendingTransition();
     const el = rowEl(step);
     const enteredAt = Number(el.dataset.enteredAt || 0);
     const elapsed = performance.now() - enteredAt;
     const wait = Math.max(0, RUNNING_MIN_MS - elapsed);
-    setTimeout(() => {
+    const id = setTimeout(() => {
+        pendingTransition = null;
         setStepState(step, nextState);
         if (cb) cb();
     }, wait);
+    pendingTransition = { step, id };
 }
 
 // Mark any rows still `pending` as `skipped` (used when an earlier stage hit).
@@ -223,9 +242,11 @@ function crackHash() {
     };
 
     const finishWithError = (msg) => {
+        cancelPendingTransition();
         if (currentStep >= 1 && currentStep <= 3) {
             scheduleTransition(currentStep, 'done-miss');
         }
+        currentStep = -1;
         stopTimer();
         resultElement.textContent = msg;
         resultDiv.classList.remove('hidden');
@@ -239,6 +260,7 @@ function crackHash() {
     };
 
     socket.onmessage = (event) => {
+        if (currentStep === -1) return;   // already finished
         let data;
         try {
             data = JSON.parse(event.data);
@@ -282,6 +304,7 @@ function crackHash() {
 
         // Terminal: password found, password "Non trovata", or explicit error.
         if (data.error) {
+            cancelPendingTransition();
             finishWithError(data.error);
             socket.close();
             return;
@@ -289,6 +312,7 @@ function crackHash() {
 
         if (data.password && data.password !== 'Non trovata') {
             // HIT on current step
+            cancelPendingTransition();
             const hitStep = currentStep >= 1 ? currentStep : 1;
             scheduleTransition(hitStep, 'done-hit', () => {
                 skipRemaining(hitStep + 1);
@@ -304,6 +328,7 @@ function crackHash() {
 
         if (data.password === 'Non trovata') {
             // Final miss on the last running step.
+            cancelPendingTransition();
             const missStep = currentStep >= 1 ? currentStep : 3;
             scheduleTransition(missStep, 'done-miss');
             stopTimer();
@@ -331,6 +356,6 @@ function crackHash() {
             finishWithError('Connessione chiusa prima della risposta.');
         }
         setTimeout(() => button.classList.remove('error'), 3000);
-        console.log('WebSocket chiuso.', ev);
+        console.log('WebSocket chiuso.', { code: ev.code, reason: ev.reason, wasClean: ev.wasClean });
     };
 }
