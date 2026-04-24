@@ -3,11 +3,25 @@ const { exec, spawn } = require('child_process');
 const cors = require('cors');
 const WebSocket = require('ws');
 const http = require('http');
+const kv = require('./kvLookup');
 
 const app = express();
 const port = Number(process.env.PORT) || 3100;
 
 const server = http.createServer(app);
+
+// --- Pre-compute KV cache bootstrap ---
+// PRECOMPUTE_KV_PATH points at the sharded binary store (produced by
+// precompute-build.sh). If the path is missing or the manifest isn't
+// marked complete, kvLookup stays disabled and the server behaves
+// exactly as before.
+const kvEnabledEnv = process.env.PRECOMPUTE_KV_ENABLED !== '0';
+const kvPath = process.env.PRECOMPUTE_KV_PATH || '/scratch/cracka_kv';
+if (kvEnabledEnv) {
+    kv.open(kvPath);
+} else {
+    console.log('[kvLookup] disabled by PRECOMPUTE_KV_ENABLED=0');
+}
 
 // --- hashcat device-slot assignment (round-robin per crack request) ---
 // HASHCAT_DEVICES = "slot1;slot2;..." where each slot is a comma-separated
@@ -85,7 +99,21 @@ wss.on('connection', (ws) => {
             ws.send(JSON.stringify({ error: 'Il codice segreto che mi hai mandato ha qualcosa che non va 🤔' }));
             return;
         }
-        
+
+        // --- Pre-compute KV cache lookup ---
+        // Fast path: if the hash is in the pre-built cache, answer now
+        // and skip the GPU round-trip entirely.
+        const cached = kv.lookup(hash.toLowerCase());
+        if (cached !== null) {
+            log('Password found in pre-compute KV - Hash: %s, Password: %s', hash, cached);
+            ws.send(JSON.stringify({
+                password: cached,
+                message: 'Ho trovato la password! ⚡',
+            }));
+            isCrackingCompleted = true;
+            return;
+        }
+
         isCrackingCompleted = false;
 
         const startNextHashcatProcess = () => {
