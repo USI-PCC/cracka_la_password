@@ -10,11 +10,19 @@ function parseStatusLine(line) {
 
 function maskLenFromGuess(guess) {
     if (!guess) return null;
-    // hashcat format: "?1?1?1?1?1 [5]" — the bracket count is authoritative.
-    const m = guess.guess_mask && guess.guess_mask.match(/\[(\d+)\]\s*$/);
-    if (m) return Number(m[1]);
-    if (typeof guess.guess_base === 'string') return guess.guess_base.length || null;
-    return null;
+    // Human-readable status: "?1?1?1?1?1 [5]" — bracket count is authoritative.
+    const explicit = guess.guess_mask && guess.guess_mask.match(/\[(\d+)\]\s*$/);
+    if (explicit) return Number(explicit[1]);
+    // --status-json: guess_mask / guess_base is the expanded mask string
+    // like "?l?l?l?l" (one ?X token per output char). Count "?" occurrences;
+    // fall through to literal length for combinator/dictionary candidates
+    // that have no mask tokens.
+    const str = (typeof guess.guess_mask === 'string' && guess.guess_mask) ||
+                (typeof guess.guess_base === 'string' && guess.guess_base) ||
+                null;
+    if (!str) return null;
+    const tokens = (str.match(/\?/g) || []).length;
+    return tokens > 0 ? tokens : (str.length || null);
 }
 
 // Hashcat's --status-json emits `estimated_stop` (UNIX epoch). Older / human

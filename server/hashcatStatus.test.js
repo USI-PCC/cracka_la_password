@@ -88,3 +88,31 @@ test('summarize returns null etaSec when estimated_stop is in the past', () => {
         Date.now = realNow;
     }
 });
+
+test('maskLen counts ? tokens for JSON-mode mask strings (no [N] suffix)', () => {
+    // hashcat --status-json emits the expanded mask string with no length
+    // suffix. Each ?X token equals one output character.
+    const cases = [
+        ['?l?l?l?l',           4],
+        ['?l?l?l?l?l',         5],
+        ['?l?l?l?l?l?l',       6],
+        ['?l?l?l?l?l?l?l',     7],
+        ['?l?u?d?l?u?d?l?u',   8],
+    ];
+    for (const [mask, expected] of cases) {
+        const s = summarize({
+            progress: [0, 1], speed_total: 0, devices: [],
+            guess: { guess_base: mask },
+        });
+        assert.strictEqual(s.maskLen, expected, `mask "${mask}" should be length ${expected}`);
+    }
+});
+
+test('maskLen falls back to literal string length for non-mask candidates', () => {
+    // Combinator/dictionary candidates have no ? tokens — use string length.
+    const s = summarize({
+        progress: [0, 1], speed_total: 0, devices: [],
+        guess: { guess_base: 'marco12' },
+    });
+    assert.strictEqual(s.maskLen, 7);
+});
