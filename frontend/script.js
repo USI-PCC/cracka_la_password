@@ -1,9 +1,9 @@
 // ---------------------------------------------------------------------------
 // Cracka la Password — frontend script
 //
-// Italian strings coupled with server/server.js messages are centralized in
-// SERVER_MESSAGES (see Task 5). If you rename a message here, also update
-// server/server.js.
+// The server emits typed envelopes ({ kind, ts, ...payload }) per
+// server/wsProtocol.js. Italian UI copy lives here: STAGE_LABEL (module scope)
+// for stage transitions, translateError() (inside crackHash) for error codes.
 // ---------------------------------------------------------------------------
 
 // ---- Make: unified input + random filler ----------------------------------
@@ -113,20 +113,6 @@ function autofillCrackInput(hash) {
     crackInput.classList.add('crack-input--pulse');
 }
 
-// ---------------------------------------------------------------------------
-// Crack flow
-//
-// Server messages (server/server.js) we care about. Keep these in sync with
-// the exact Italian strings the server sends.
-// ---------------------------------------------------------------------------
-const SERVER_MESSAGES = {
-    RECEIVED:   'Ricevuto il codice segreto! 🕵️‍♂️',          // server.js:62
-    DICT_START: 'Proviamo con un attacco con dizionario! 📖',  // server.js:222
-    DICT_GPU:   'Ho iniziato a crackare la password in modalità dizionario! 📖', // server.js:131
-    BF_START:   'Proviamo con un attacco brute-force! 🔍',     // server.js:92
-    BF_GPU:     'Ho iniziato a crackare la password in modalità brute-force! 🔍' // server.js:133
-};
-
 // ---- Step-row state machine ------------------------------------------------
 
 const STEP_STATES = ['pending', 'running', 'done-hit', 'done-miss', 'skipped'];
@@ -136,6 +122,15 @@ const STEP_ICONS  = {
     'done-hit':'✅',
     'done-miss':'⊝',
     skipped:   '—'
+};
+
+const STAGE_TO_STEP = { archivio: 1, dictionary: 2, 'brute-force': 3 };
+
+// Italian copy lives here now (was in server before).
+const STAGE_LABEL = {
+    archivio:      'Cerco negli archivi…',
+    dictionary:    'Provo con un attacco a dizionario… 📖',
+    'brute-force': 'Provo con la forza bruta… 🔍',
 };
 
 // Minimum ms a row must be in `running` before we accept the next transition.
@@ -168,6 +163,11 @@ function cancelPendingTransition() {
 }
 
 function resetPlan() {
+    document.getElementById('hud').classList.add('hidden');
+    document.getElementById('hudBar').style.width = '0%';
+    document.getElementById('cacheLine').classList.add('hidden');
+    document.getElementById('latencyLine').classList.add('hidden');
+    document.getElementById('logList').innerHTML = '';
     cancelPendingTransition();
     [1, 2, 3].forEach(s => setStepState(s, 'pending'));
 }
@@ -226,6 +226,8 @@ function crackHash() {
     // Track which step is currently "running" from the state-machine POV.
     // 0 = not started yet, 1/2/3 = respective row, -1 = terminal.
     let currentStep = 0;
+    let receivedAt = 0;
+    let firstStatusAt = 0;
 
     const startTime = performance.now();
     const timerInterval = setInterval(() => {
@@ -260,90 +262,163 @@ function crackHash() {
     };
 
     socket.onmessage = (event) => {
-        if (currentStep === -1) return;   // already finished
-        let data;
-        try {
-            data = JSON.parse(event.data);
-        } catch (e) {
-            console.error('Errore parsing JSON:', e);
-            finishWithError('Errore nella comunicazione con il server.');
-            socket.close();
-            return;
+        if (currentStep === -1) return;
+        let msg;
+        try { msg = JSON.parse(event.data); }
+        catch { finishWithError('Errore nella comunicazione con il server.'); socket.close(); return; }
+        console.log('WS <-', msg);
+        handleMessage(msg);
+    };
+
+    function handleMessage(msg) {
+        appendLog(msg);
+        switch (msg.kind) {
+            case 'hello':      return onHello(msg);
+            case 'received':   return onReceived(msg);
+            case 'stage':      return onStage(msg);
+            case 'status':     return onStatus(msg);
+            case 'cache_hit':  return onCacheHit(msg);
+            case 'result':     return onResult(msg);
+            case 'error':      return finishWithError(translateError(msg.message));
+            default:           console.warn('Unknown WS kind:', msg.kind, msg);
         }
+    }
 
-        console.log('WS <-', data);
+    function appendLog(msg) {
+        const list = document.getElementById('logList');
+        if (!list) return;
+        const li = document.createElement('li');
+        const t = new Date(msg.ts || Date.now()).toLocaleTimeString('it-IT', { hour12: false });
+        li.innerHTML = `<span class="log-time">${t}</span> <span class="log-kind">${msg.kind}</span> <span class="log-payload"></span>`;
+        li.querySelector('.log-payload').textContent = JSON.stringify(stripStatusVerbose(msg));
+        list.appendChild(li);
+        while (list.children.length > 200) list.removeChild(list.firstChild);
+    }
 
-        // Handle status-only messages (no password field).
-        if (data.message && !data.password && !data.error) {
-            const m = data.message;
+    // Status frames are noisy — keep only the small fields in the log.
+    function stripStatusVerbose(msg) {
+        if (msg.kind !== 'status') return msg;
+        return { kind: 'status', hashRate: msg.hashRate, candidate: msg.candidate, maskLen: msg.maskLen };
+    }
 
-            if (m === SERVER_MESSAGES.RECEIVED) {
-                // ① Archivio begins
-                currentStep = 1;
-                setStepState(1, 'running');
-
-            } else if (m === SERVER_MESSAGES.DICT_START) {
-                // ① miss, ② starts
-                scheduleTransition(1, 'done-miss', () => {
-                    currentStep = 2;
-                    setStepState(2, 'running');
-                });
-
-            } else if (m === SERVER_MESSAGES.BF_START) {
-                // ② miss, ③ starts
-                scheduleTransition(2, 'done-miss', () => {
-                    currentStep = 3;
-                    setStepState(3, 'running');
-                });
-
-            } else if (m === SERVER_MESSAGES.DICT_GPU || m === SERVER_MESSAGES.BF_GPU) {
-                // Informational: GPU started. Row state unchanged.
+    function onHello(msg) {
+        if (msg.deviceSlot) {
+            const b = document.getElementById('deviceBadge');
+            b.textContent = `GPU: ${msg.deviceSlot}`;
+            b.classList.remove('hidden');
+        }
+        if (typeof msg.dictSize === 'number') {
+            const formatted = msg.dictSize.toLocaleString('it-IT');
+            const combos = (msg.dictSize * msg.dictSize).toLocaleString('it-IT');
+            document.getElementById('dictContext').textContent =
+                `${formatted} parole × ${formatted} = ${combos} combinazioni`;
+        }
+    }
+    function onReceived(_msg) {
+        receivedAt = performance.now();
+        currentStep = 1;
+        setStepState(1, 'running');
+    }
+    function onStage(msg) {
+        if (msg.phase !== 'start') return;       // gpu-running is informational
+        const step = STAGE_TO_STEP[msg.name];
+        if (!step) return;
+        // Mark earlier steps miss, advance to this one.
+        scheduleTransition(currentStep || 1, 'done-miss', () => {
+            currentStep = step;
+            setStepState(step, 'running');
+        });
+    }
+    function onStatus(msg) {
+        if (!firstStatusAt) {
+            firstStatusAt = performance.now();
+            if (receivedAt) {
+                const ms = (firstStatusAt - receivedAt).toFixed(1);
+                document.getElementById('latencyMs').textContent = ms;
+                document.getElementById('latencyLine').classList.remove('hidden');
             }
-            return;
         }
-
-        // Terminal: password found, password "Non trovata", or explicit error.
-        if (data.error) {
-            cancelPendingTransition();
-            finishWithError(data.error);
-            socket.close();
-            return;
+        document.getElementById('hud').classList.remove('hidden');
+        document.getElementById('hudRate').textContent = formatRate(msg.hashRate);
+        document.getElementById('hudCandidate').textContent = msg.candidate || '—';
+        document.getElementById('hudMask').textContent = msg.maskLen ? `${msg.maskLen} caratteri` : '—';
+        document.getElementById('hudEta').textContent =
+            msg.etaSec != null ? formatEta(msg.etaSec) : '—';
+        if (Array.isArray(msg.progress) && msg.progress[1] > 0) {
+            const pct = (100 * msg.progress[0]) / msg.progress[1];
+            document.getElementById('hudBar').style.width = `${pct.toFixed(2)}%`;
         }
+        renderGpuBars(msg.devices);   // Task 8 wires this
+    }
 
-        if (data.password && data.password !== 'Non trovata') {
-            // HIT on current step
-            cancelPendingTransition();
+    function formatRate(hps) {
+        if (!hps) return '—';
+        const units = [['GH/s', 1e9], ['MH/s', 1e6], ['kH/s', 1e3]];
+        for (const [u, d] of units) if (hps >= d) return `${(hps / d).toFixed(2)} ${u}`;
+        return `${hps} H/s`;
+    }
+
+    function formatEta(s) {
+        if (s < 60) return `${s}s`;
+        const m = Math.floor(s / 60);
+        const ss = String(s % 60).padStart(2, '0');
+        if (m < 60) return `${m}:${ss}`;
+        const h = Math.floor(m / 60);
+        const mm = String(m % 60).padStart(2, '0');
+        return `${h}:${mm}:${ss}`;
+    }
+
+    function renderGpuBars(devices) {
+        const grid = document.getElementById('gpuGrid');
+        if (!devices || devices.length === 0) { grid.innerHTML = ''; return; }
+        grid.innerHTML = devices.map(d => `
+            <div class="gpu-card">
+                <div class="gpu-card__name">GPU ${d.id}</div>
+                <div class="gpu-bar">
+                    <div class="gpu-bar__fill" style="width:${d.util ?? 0}%"></div>
+                </div>
+                <div class="gpu-card__meta">
+                    <span>${d.util ?? '—'}%</span>
+                    <span>${d.temp != null ? `${d.temp}°C` : ''}</span>
+                </div>
+            </div>
+        `).join('');
+    }
+    function onCacheHit(msg) {
+        document.getElementById('cacheMs').textContent = msg.lookupMs.toFixed(2);
+        document.getElementById('cacheSource').textContent =
+            msg.source === 'kv' ? 'cache pre-calcolata ⚡' : 'archivio (potfile) 📓';
+        document.getElementById('cacheLine').classList.remove('hidden');
+    }
+    function onResult(msg) {
+        cancelPendingTransition();
+        if (msg.password) {
             const hitStep = currentStep >= 1 ? currentStep : 1;
-            scheduleTransition(hitStep, 'done-hit', () => {
-                skipRemaining(hitStep + 1);
-            });
-            stopTimer();
-            resultElement.textContent = data.password;
-            resultDiv.classList.remove('hidden');
-            button.classList.remove('loading');
-            currentStep = -1;
-            socket.close();
-            return;
-        }
-
-        if (data.password === 'Non trovata') {
-            // Final miss on the last running step.
-            cancelPendingTransition();
+            scheduleTransition(hitStep, 'done-hit', () => skipRemaining(hitStep + 1));
+            resultElement.textContent = msg.password;
+        } else {
             const missStep = currentStep >= 1 ? currentStep : 3;
             scheduleTransition(missStep, 'done-miss');
-            stopTimer();
             resultElement.textContent = 'Non sono riuscito a decifrarla';
-            resultDiv.classList.remove('hidden');
-            button.classList.remove('loading');
-            currentStep = -1;
-            socket.close();
-            return;
         }
-
-        // Unknown shape.
-        finishWithError('Risposta non gestita dal server.');
+        const modeText = ({ kv:'cache ⚡', potfile:'archivio 📓', dictionary:'dizionario 📖', 'brute-force':'forza bruta 🔍' })[msg.mode] || msg.mode || '—';
+        document.getElementById('modeBadge').textContent = modeText;
+        stopTimer();
+        resultDiv.classList.remove('hidden');
+        button.classList.remove('loading');
+        currentStep = -1;
         socket.close();
-    };
+    }
+
+    function translateError(code) {
+        return ({
+            invalid_json:           'Ops... ho inviato qualcosa di sbagliato… 😵‍💫',
+            missing_hash:           'Devi inserire il codice segreto! 🤫',
+            bad_hash_format:        'Il codice segreto ha qualcosa che non va 🤔',
+            archivio_lookup_failed: 'Ops... ho sbagliato qualcosa negli archivi 🗄️',
+            hashcat_failed:         'Non ho voglia di lavorare oggi! 😴',
+        })[code] || 'Errore dal server.';
+    }
 
     socket.onerror = (err) => {
         console.error('Errore WebSocket:', err);

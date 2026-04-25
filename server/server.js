@@ -4,6 +4,9 @@ const cors = require('cors');
 const WebSocket = require('ws');
 const http = require('http');
 const kv = require('./kvLookup');
+const { envelope, MESSAGE_KINDS } = require('./wsProtocol');
+const { parseStatusLine, summarize } = require('./hashcatStatus');
+const fs = require('node:fs');
 
 const app = express();
 const port = Number(process.env.PORT) || 3100;
@@ -57,11 +60,31 @@ const error = (message, ...args) => {
     console.error(`\x1b[31m[${timestamp}] ERROR:\x1b[0m\n${message}\n`, ...args);
 };
 
+// Compute dictionary size once so the frontend can render a context card.
+// Placed here (after `error` is defined) so the catch block can call error().
+let dictSize = 0;
+try {
+    dictSize = fs.readFileSync('bruteforce.txt', 'utf8').split('\n').filter(Boolean).length;
+} catch (e) {
+    error('Could not read bruteforce.txt for dict size: %s', e.message);
+}
+
+function send(ws, kind, payload) {
+    if (ws.readyState !== ws.OPEN) return;
+    ws.send(JSON.stringify(envelope(kind, payload)));
+}
+
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
 const wss = new WebSocket.Server({ server });
+
+function assignedDevicesForHello() {
+    // Show what slot WOULD be used; do not advance the cursor.
+    if (deviceSlots.length === 0) return null;
+    return deviceSlots[deviceCursor % deviceSlots.length];
+}
 
 log('WebSocket server created and attached to HTTP server.');
 
@@ -73,13 +96,13 @@ wss.on('connection', (ws) => {
     let mode = null;
 
     ws.on('message', async (message) => {
-        ws.send(JSON.stringify({ message: 'Ricevuto il codice segreto! 🕵️‍♂️' }));
+        send(ws, MESSAGE_KINDS.RECEIVED, {});
         let parsedMessage;
         try {
             parsedMessage = JSON.parse(message);
         } catch (e) {
             error('Invalid JSON message received:', message);
-            ws.send(JSON.stringify({ error: 'Ops... ho inviato qualcosa di sbagliato... 😵‍💫' }));
+            send(ws, MESSAGE_KINDS.ERROR, { message: 'invalid_json' });
             return;
         }
 
@@ -89,27 +112,27 @@ wss.on('connection', (ws) => {
 
         if (!hash) {
             error('Request rejected - Missing hash parameter');
-            ws.send(JSON.stringify({ error: 'Devi inserire il codice segreto! 🤫' }));
+            send(ws, MESSAGE_KINDS.ERROR, { message: 'missing_hash' });
             return;
         }
 
         const md5Regex = /^[a-f0-9]{32}$/i;
         if (!md5Regex.test(hash)) {
             error('Invalid MD5 hash format - Hash: %s', hash);
-            ws.send(JSON.stringify({ error: 'Il codice segreto che mi hai mandato ha qualcosa che non va 🤔' }));
+            send(ws, MESSAGE_KINDS.ERROR, { message: 'bad_hash_format' });
             return;
         }
 
         // --- Pre-compute KV cache lookup ---
         // Fast path: if the hash is in the pre-built cache, answer now
         // and skip the GPU round-trip entirely.
+        const kvStart = performance.now();
         const cached = kv.lookup(hash.toLowerCase());
+        const kvMs = performance.now() - kvStart;
         if (cached !== null) {
-            log('Password found in pre-compute KV - Hash: %s, Password: %s', hash, cached);
-            ws.send(JSON.stringify({
-                password: cached,
-                message: 'Ho trovato la password! ⚡',
-            }));
+            log('Password found in pre-compute KV - Hash: %s, Password: %s (%fms)', hash, cached, kvMs);
+            send(ws, MESSAGE_KINDS.CACHE_HIT, { source: 'kv', lookupMs: kvMs, password: cached });
+            send(ws, MESSAGE_KINDS.RESULT, { password: cached, mode: 'kv' });
             isCrackingCompleted = true;
             return;
         }
@@ -118,7 +141,7 @@ wss.on('connection', (ws) => {
 
         const startNextHashcatProcess = () => {
             log('Starting second hashcat process (brute-force) for hash: %s', hash);
-            ws.send(JSON.stringify({ message: 'Proviamo con un attacco brute-force! 🔍' }));
+            send(ws, MESSAGE_KINDS.STAGE, { name: 'brute-force', phase: 'start' });
             mode = 'brute-force';
             const bfArgs = [
                 '-m', '0',
@@ -128,6 +151,7 @@ wss.on('connection', (ws) => {
                 '-1', '?l?u?d',
                 '--increment-min', '4',
                 '-i',
+                '--status', '--status-json', '--status-timer', '1',
                 hash,
                 '?1?1?1?1?1?1?1?1?1?1'
             ];
@@ -138,7 +162,7 @@ wss.on('connection', (ws) => {
             attachHashcatEventHandlers(currentHashcatProcess, () => {
                 if (!isCrackingCompleted) {
                     log('Second hashcat process for %s finished, password not found.', hash);
-                    ws.send(JSON.stringify({ password: 'Non trovata', message: 'Non sono riuscito a trovare la password... 😥' }));
+                    send(ws, MESSAGE_KINDS.RESULT, { password: null, mode: 'brute-force' });
                 }
             });
         };
@@ -156,16 +180,29 @@ wss.on('connection', (ws) => {
                         log('Hashcat process started computation for hash: %s (Count: %d)', hash, hashcatProcessCount);
                         clearInterval(gpustatInterval);
                         if (mode === 'dictionary') {
-                            ws.send(JSON.stringify({ message: 'Ho iniziato a crackare la password in modalità dizionario! 📖' }));
+                            send(ws, MESSAGE_KINDS.STAGE, { name: 'dictionary', phase: 'gpu-running' });
                         } else if (mode === 'brute-force') {
-                            ws.send(JSON.stringify({ message: 'Ho iniziato a crackare la password in modalità brute-force! 🔍' }));
+                            send(ws, MESSAGE_KINDS.STAGE, { name: 'brute-force', phase: 'gpu-running' });
                         }
                     }
                 });
             }, 1000);
 
-            processInstance.stdout.on('data', (data) => {
-                log('Hashcat stdout for %s: %s', hash, data.toString().trim());
+            let stdoutBuf = '';
+            processInstance.stdout.on('data', (chunk) => {
+                stdoutBuf += chunk.toString();
+                let nl;
+                while ((nl = stdoutBuf.indexOf('\n')) !== -1) {
+                    const line = stdoutBuf.slice(0, nl);
+                    stdoutBuf = stdoutBuf.slice(nl + 1);
+                    const parsed = parseStatusLine(line);
+                    if (parsed) {
+                        send(ws, MESSAGE_KINDS.STATUS, summarize(parsed));
+                    } else if (line.trim()) {
+                        // Keep the existing diagnostic logging for non-status lines.
+                        log('Hashcat stdout for %s: %s', hash, line.trim());
+                    }
+                }
             });
 
             processInstance.stderr.on('data', (data) => {
@@ -176,7 +213,7 @@ wss.on('connection', (ws) => {
                 error('Hashcat process error for %s: %s', hash, hcError.message);
                 clearInterval(gpustatInterval);
                 if (!isCrackingCompleted) {
-                    ws.send(JSON.stringify({ error: 'Non ho voglia di lavorare oggi! 😴' }));
+                    send(ws, MESSAGE_KINDS.ERROR, { message: 'hashcat_failed' });
                     isCrackingCompleted = true; 
                 }
             });
@@ -210,7 +247,7 @@ wss.on('connection', (ws) => {
 
                         if (pwd) {
                             isCrackingCompleted = true;
-                            ws.send(JSON.stringify({ password: pwd, message: 'Ho trovato la password! 🥳' }));
+                            send(ws, MESSAGE_KINDS.RESULT, { password: pwd, mode });
                             log('Password successfully retrieved with --show and sent - Hash: %s, Password: %s', hash, pwd);
                         } else {
                             log('Hashcat --show for %s did not yield a clear password. Stdout: "%s"', hash, trimmedStdout);
@@ -230,30 +267,34 @@ wss.on('connection', (ws) => {
 
 
         log('Checking for existing hash in potfile - Hash: %s', hash);
+        const potStart = performance.now();
         exec(`hashcat/hashcat -m 0 --session ${nextSession()} --show ${hash}`, (err, stdout, stderr) => {
+            const potMs = performance.now() - potStart;
             if (err) {
                 error('Failed to check existing hash: %s - Hash: %s', err.message, hash);
-                ws.send(JSON.stringify({ error: 'Ops... Ho sbagliato qualcosa mentre cercavo la tua password negli archivi... 🗄️' }));
+                send(ws, MESSAGE_KINDS.ERROR, { message: 'archivio_lookup_failed' });
                 return;
             }
 
             if (stdout.trim()) {
                 const parts = stdout.trim().split(':');
                 const password = parts.length > 1 ? parts.slice(1).join(':') : 'Potfile: Password not clearly found after colon';
-                log('Password found in potfile - Hash: %s, Password: %s', hash, password);
-                ws.send(JSON.stringify({ password: password, message: 'Ho trovato la password! 🎉' }));
+                log('Password found in potfile - Hash: %s, Password: %s (%fms)', hash, password, potMs);
+                send(ws, MESSAGE_KINDS.CACHE_HIT, { source: 'potfile', lookupMs: potMs, password });
+                send(ws, MESSAGE_KINDS.RESULT, { password, mode: 'potfile' });
                 isCrackingCompleted = true;
                 return;
             }
 
             log('Hash not found in potfile, initiating first cracking process (combinator) - Hash: %s', hash);
-            ws.send(JSON.stringify({ message: 'Proviamo con un attacco con dizionario! 📖' }));
+            send(ws, MESSAGE_KINDS.STAGE, { name: 'dictionary', phase: 'start' });
             mode = 'dictionary';
             const dictArgs = [
                 '-m', '0',
                 '-a', '1',
                 '-w', '4',
                 '-O',
+                '--status', '--status-json', '--status-timer', '1',
                 hash,
                 'bruteforce.txt',
                 'bruteforce.txt'
@@ -294,7 +335,7 @@ wss.on('connection', (ws) => {
         currentHashcatProcess = null;
     });
 
-    ws.send(JSON.stringify({ message: 'Connessione al server riuscita! 👋' }));
+    send(ws, MESSAGE_KINDS.HELLO, { deviceSlot: assignedDevicesForHello(), dictSize });
 });
 
 server.listen(port, () => {

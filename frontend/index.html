@@ -12,6 +12,9 @@
         <header class="intro">
             <h1>🔐 Laboratorio delle chiavi</h1>
             <p>Una piccola officina per creare e decifrare chiavi MD5.</p>
+            <div class="badge-row">
+                <span class="badge hidden" id="deviceBadge"></span>
+            </div>
         </header>
 
         <!-- ================= MAKE ================= -->
@@ -75,6 +78,7 @@
                     <div class="step-row__body">
                         <strong>② 📖 Dizionario</strong>
                         <p>Proviamo combinazioni di parole comuni.</p>
+                        <small class="step-row__context" id="dictContext"></small>
                     </div>
                 </div>
                 <div class="step-row step-row--pending" data-step="3">
@@ -82,14 +86,45 @@
                     <div class="step-row__body">
                         <strong>③ 🔡 Forza bruta</strong>
                         <p>Proviamo ogni combinazione di lettere e numeri, da 4 a 10.</p>
+                        <small class="step-row__context" id="bfContext">alfabeto a-z A-Z 0-9 (62 caratteri), lunghezza 4–10</small>
                     </div>
                 </div>
+            </div>
+
+            <div class="hud hidden" id="hud">
+                <div class="hud__row">
+                    <span class="hud__label">Velocità</span>
+                    <span class="hud__value" id="hudRate">—</span>
+                </div>
+                <div class="hud__row">
+                    <span class="hud__label">Tentativo</span>
+                    <span class="hud__value mono" id="hudCandidate">—</span>
+                </div>
+                <div class="hud__row">
+                    <span class="hud__label">Lunghezza</span>
+                    <span class="hud__value" id="hudMask">—</span>
+                </div>
+                <div class="hud__row">
+                    <span class="hud__label">Tempo rimasto</span>
+                    <span class="hud__value" id="hudEta">—</span>
+                </div>
+                <div class="hud__progress">
+                    <div class="hud__progress-bar" id="hudBar"></div>
+                </div>
+                <div class="gpu-grid" id="gpuGrid"></div>
             </div>
 
             <div class="result hidden" id="resultDiv">
                 <p>Password: <span class="highlight" id="crackedResult">...</span></p>
                 <p>Tempo: <span id="elapsedTime">...</span> s</p>
+                <p id="cacheLine" class="hidden">Trovata in <span id="cacheMs">—</span> ms — <span id="cacheSource">—</span></p>
+                <p id="latencyLine" class="hidden">Latenza: <span id="latencyMs">—</span> ms (richiesta → primo segnale GPU)</p>
+                <p id="modeLine">Metodo: <span class="badge mode-badge" id="modeBadge">—</span></p>
             </div>
+            <details class="log-panel">
+                <summary>📜 Log dettagliato</summary>
+                <ol class="log-list" id="logList"></ol>
+            </details>
         </section>
     </div>
     <script src="script.js"></script>

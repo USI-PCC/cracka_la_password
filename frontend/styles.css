@@ -325,3 +325,64 @@ button:hover {
 .crack-input--pulse {
     animation: pulseGlow 1s ease-out 1;
 }
+
+/* ---------------- HUD ---------------- */
+.hud {
+    background: #fff;
+    border: 3px solid var(--bright-blue);
+    border-radius: 15px;
+    padding: 15px;
+    margin: 20px 0;
+    text-align: left;
+}
+.hud__row { display: flex; justify-content: space-between; padding: 4px 0; }
+.hud__label { color: #555; }
+.hud__value { font-weight: bold; }
+.hud__value.mono { font-family: 'SF Mono','Consolas',monospace; }
+.hud__progress {
+    height: 12px; background: #eef; border-radius: 6px; overflow: hidden;
+    margin-top: 10px;
+}
+.hud__progress-bar {
+    height: 100%; width: 0%; background: var(--green);
+    transition: width 0.4s ease;
+}
+
+.gpu-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-top: 12px; }
+.gpu-card { background: #f7fbff; border: 2px solid var(--bright-blue); border-radius: 10px; padding: 8px; }
+.gpu-card__name { font-weight: bold; font-size: 0.9em; }
+.gpu-bar { height: 8px; background: #ddd; border-radius: 4px; overflow: hidden; margin: 6px 0; }
+.gpu-bar__fill { height: 100%; background: var(--pink); transition: width 0.4s ease; }
+.gpu-card__meta { display: flex; justify-content: space-between; font-size: 0.8em; color: #555; }
+
+/* ---------------- Device badge + dict context (Task 9) ---------------- */
+.badge-row { margin-top: 8px; }
+.badge {
+    display: inline-block;
+    background: var(--yellow);
+    border: 2px solid var(--orange);
+    border-radius: 12px;
+    padding: 4px 12px;
+    font-size: 0.85em;
+    font-weight: bold;
+}
+.step-row__context {
+    display: block;
+    color: #666;
+    font-size: 0.8em;
+    margin-top: 4px;
+}
+
+.mode-badge { background: var(--green); border-color: #2a8e6e; }
+
+/* ---------------- Collapsible log panel (Task 11) ---------------- */
+.log-panel { margin-top: 20px; text-align: left; }
+.log-panel summary { cursor: pointer; font-weight: bold; }
+.log-list {
+    max-height: 220px; overflow-y: auto;
+    background: #fafafa; border: 1px solid #ddd; border-radius: 8px;
+    padding: 8px 30px; font-family: 'SF Mono','Consolas',monospace; font-size: 0.78em;
+}
+.log-time  { color: #999; margin-right: 6px; }
+.log-kind  { color: var(--bright-blue); font-weight: bold; margin-right: 6px; }
+.log-payload { color: #444; }
