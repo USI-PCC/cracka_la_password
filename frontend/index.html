@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cracka la Password — Laboratorio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;700&family=Inter+Tight:wght@400;500;700&family=JetBrains+Mono:wght@500&display=swap">
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 </head>
@@ -61,7 +64,8 @@
             </div>
 
             <div class="form-group actions">
-                <button type="button" class="spiral-button" onclick="crackHash()">🚀 Avvia la decifratura</button>
+                <button type="button" class="spiral-button" id="crackButton" onclick="crackHash()">🚀 Avvia la decifratura</button>
+                <button type="button" class="stop-button hidden" id="stopButton" onclick="stopCracking()">⏹ Ferma</button>
             </div>
 
             <div class="plan" id="attackPlan">
@@ -126,6 +130,10 @@
                 <ol class="log-list" id="logList"></ol>
             </details>
         </section>
+
+        <div class="reset-row">
+            <button type="button" class="reset-button" onclick="clearAll()">🧹 Pulisci tutto</button>
+        </div>
     </div>
     <script src="script.js"></script>
 </body>

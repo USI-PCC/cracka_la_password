@@ -162,6 +162,11 @@ function cancelPendingTransition() {
     }
 }
 
+// References for the active crack run, exposed so the Stop / Reset buttons
+// (which live outside crackHash's closure) can intervene. Cleared on terminal.
+let activeSocket = null;
+let userStopped = false;
+
 function resetPlan() {
     document.getElementById('hud').classList.add('hidden');
     document.getElementById('hudBar').style.width = '0%';
@@ -210,7 +215,8 @@ function crackHash() {
         return;
     }
 
-    const button          = document.querySelector('.spiral-button');
+    const button          = document.getElementById('crackButton');
+    const stopBtn         = document.getElementById('stopButton');
     const resultElement   = document.getElementById('crackedResult');
     const elapsedTimeEl   = document.getElementById('elapsedTime');
     const resultDiv       = document.getElementById('resultDiv');
@@ -219,6 +225,8 @@ function crackHash() {
     resetPlan();
     button.classList.remove('error');
     button.classList.add('loading');
+    stopBtn.classList.remove('hidden');
+    userStopped = false;
     resultElement.textContent = 'Connessione in corso...';
     elapsedTimeEl.textContent = '0.00';
     resultDiv.classList.add('hidden');
@@ -237,6 +245,7 @@ function crackHash() {
 
     const wsScheme = location.protocol === 'https:' ? 'wss' : 'ws';
     const socket = new WebSocket(`${wsScheme}://${location.host}/ws`);
+    activeSocket = socket;
 
     const stopTimer = () => {
         clearInterval(timerInterval);
@@ -254,6 +263,8 @@ function crackHash() {
         resultDiv.classList.remove('hidden');
         button.classList.remove('loading');
         button.classList.add('error');
+        stopBtn.classList.add('hidden');
+        activeSocket = null;
     };
 
     socket.onopen = () => {
@@ -406,7 +417,9 @@ function crackHash() {
         stopTimer();
         resultDiv.classList.remove('hidden');
         button.classList.remove('loading');
+        stopBtn.classList.add('hidden');
         currentStep = -1;
+        activeSocket = null;
         socket.close();
     }
 
@@ -427,10 +440,75 @@ function crackHash() {
 
     socket.onclose = (ev) => {
         if (button.classList.contains('loading')) {
-            // Connection dropped before we could finish.
-            finishWithError('Connessione chiusa prima della risposta.');
+            if (userStopped) {
+                // Deliberate stop via the Stop button — show a friendly message,
+                // not the network-error styling.
+                cancelPendingTransition();
+                if (currentStep >= 1 && currentStep <= 3) {
+                    scheduleTransition(currentStep, 'done-miss');
+                }
+                currentStep = -1;
+                stopTimer();
+                resultElement.textContent = '⏹ Decifratura interrotta';
+                resultDiv.classList.remove('hidden');
+                button.classList.remove('loading');
+                stopBtn.classList.add('hidden');
+            } else {
+                // Connection dropped before we could finish.
+                finishWithError('Connessione chiusa prima della risposta.');
+            }
         }
+        activeSocket = null;
+        userStopped = false;
         setTimeout(() => button.classList.remove('error'), 3000);
         console.log('WebSocket chiuso.', { code: ev.code, reason: ev.reason, wasClean: ev.wasClean });
     };
+}
+
+// ---- Stop & Reset (module-level, used by buttons outside crackHash) -------
+
+function stopCracking() {
+    if (!activeSocket) return;
+    userStopped = true;
+    try { activeSocket.close(); } catch (_) { /* socket already closing */ }
+    // The rest of the UI cleanup runs in socket.onclose.
+}
+
+function clearAll() {
+    // If a crack is running, stop it first. onclose will tidy the Crack pane.
+    if (activeSocket) stopCracking();
+
+    // Make section
+    const pwd = document.getElementById('password');
+    pwd.value = '';
+    pwd.type = 'text';
+    document.getElementById('toggleVisibilityButton').textContent = '👁 Mostra';
+    lastValueWasRandom = false;
+    document.getElementById('makeResult').classList.add('hidden');
+    document.getElementById('wordRow').classList.add('hidden');
+
+    // Crack section
+    const hi = document.getElementById('hashInput');
+    hi.value = '';
+    hi.classList.remove('crack-input--pulse');
+    document.getElementById('resultDiv').classList.add('hidden');
+    document.getElementById('hud').classList.add('hidden');
+    document.getElementById('cacheLine').classList.add('hidden');
+    document.getElementById('latencyLine').classList.add('hidden');
+    document.getElementById('logList').innerHTML = '';
+    document.getElementById('hudBar').style.width = '0%';
+    document.getElementById('gpuGrid').innerHTML = '';
+
+    // Plan rows back to pending; cancel any pending transition timer.
+    cancelPendingTransition();
+    [1, 2, 3].forEach(s => setStepState(s, 'pending'));
+
+    // Reset crack button states.
+    const cb = document.getElementById('crackButton');
+    if (cb) {
+        cb.classList.remove('loading');
+        cb.classList.remove('error');
+    }
+    const sb = document.getElementById('stopButton');
+    if (sb) sb.classList.add('hidden');
 }

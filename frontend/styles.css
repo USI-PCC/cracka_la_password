@@ -8,8 +8,32 @@
 
 body {
     background-color: #f0f9ff;
-    font-family: 'Comic Sans MS', 'Chalkboard SE', sans-serif;
-    background-image: url("data:image/svg+xml,%3Csvg width='52' height='26' viewBox='0 0 52 26' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill-rule='evenodd'%3E%3Cg fill='%23a2d9ff' fill-opacity='0.4'%3E%3Cpath d='M10 10c0-2.21-1.79-4-4-4-3.314 0-6-2.686-6-6h2c0 2.21 1.79 4 4 4 3.314 0 6 2.686 6 6 0 2.21 1.79 4 4 4 3.314 0 6 2.686 6 6 0 2.21 1.79 4 4 4v2c-3.314 0-6-2.686-6-6 0-2.21-1.79-4-4-4-3.314 0-6-2.686-6-6zm25.464-1.95l8.486 8.486-1.414 1.414-8.486-8.486 1.414-1.414z' /%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    font-family: 'Inter Tight', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    color: #2a3744;
+    /* Lab-paper grid: subtle blue lines on the existing pale-blue base. */
+    background-image:
+        linear-gradient(rgba(64,180,229,0.10) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(64,180,229,0.10) 1px, transparent 1px);
+    background-size: 28px 28px;
+}
+
+h1, h2, h3 {
+    font-family: 'Fraunces', 'Georgia', serif;
+    letter-spacing: -0.01em;
+}
+
+/* Fixed-width font for the data we want kids to compare visually:
+   the hash, the input where they paste it, the cracked password, and the
+   live "tentativo" candidate in the HUD. */
+#hashResult,
+#hashInput,
+#crackedResult,
+#hudCandidate,
+#cacheMs,
+#latencyMs,
+#elapsedTime {
+    font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+    font-feature-settings: 'tnum';
 }
 
 .container {
@@ -386,3 +410,36 @@ button:hover {
 .log-time  { color: #999; margin-right: 6px; }
 .log-kind  { color: var(--bright-blue); font-weight: bold; margin-right: 6px; }
 .log-payload { color: #444; }
+
+/* ---------------- Stop button (red secondary, shown only while cracking) ---- */
+.stop-button {
+    background-color: #ffe1e1;
+    color: #5a0e0e;
+    border-color: #d64545;
+    box-shadow: 5px 5px 0px #d64545;
+}
+.stop-button:hover {
+    background-color: #ff9f9f;
+    box-shadow: 3px 3px 0px #ffe1e1;
+}
+
+/* ---------------- Reset button (ghost, bottom of page) -------------------- */
+.reset-row {
+    margin-top: 30px;
+    text-align: center;
+}
+.reset-button {
+    background-color: transparent;
+    color: #6b7886;
+    border: 2px solid #c5d2de;
+    box-shadow: none;
+    font-size: 0.95em;
+    padding: 10px 22px;
+}
+.reset-button:hover {
+    background-color: #f1f5f9;
+    color: #2a3744;
+    border-color: #6b7886;
+    transform: scale(1.02);
+    box-shadow: none;
+}
