@@ -47,3 +47,44 @@ test('summarize copes with missing optional fields', () => {
     assert.strictEqual(s.maskLen, null);
     assert.strictEqual(s.etaSec, null);
 });
+
+test('summarize derives etaSec from estimated_stop when time_left is absent', () => {
+    // Pin "now" so the test is deterministic — pretend it's epoch 1_000_000.
+    const nowSec = 1_000_000;
+    const stopSec = nowSec + 42;
+    const { summarize: _ } = require('./hashcatStatus');
+    // Patch Date.now for this test only.
+    const realNow = Date.now;
+    Date.now = () => nowSec * 1000;
+    try {
+        const s = summarize({
+            progress: [0, 100], speed_total: 1, devices: [],
+            estimated_stop: stopSec,
+        });
+        assert.strictEqual(s.etaSec, 42);
+    } finally {
+        Date.now = realNow;
+    }
+});
+
+test('summarize prefers time_left over estimated_stop when both are present', () => {
+    const s = summarize({
+        progress: [0, 100], speed_total: 1, devices: [],
+        time_left: 7, estimated_stop: 9999999999,
+    });
+    assert.strictEqual(s.etaSec, 7);
+});
+
+test('summarize returns null etaSec when estimated_stop is in the past', () => {
+    const realNow = Date.now;
+    Date.now = () => 2_000_000 * 1000;
+    try {
+        const s = summarize({
+            progress: [0, 100], speed_total: 1, devices: [],
+            estimated_stop: 1_000_000,
+        });
+        assert.strictEqual(s.etaSec, null);
+    } finally {
+        Date.now = realNow;
+    }
+});

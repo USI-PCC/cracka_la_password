@@ -17,6 +17,18 @@ function maskLenFromGuess(guess) {
     return null;
 }
 
+// Hashcat's --status-json emits `estimated_stop` (UNIX epoch). Older / human
+// formats use `time_left` (seconds remaining). Accept either; clamp negatives
+// to null so a stale "already ended" estimate doesn't render as a count-up.
+function etaSecFrom(parsed, nowMs = Date.now()) {
+    if (typeof parsed.time_left === 'number') return parsed.time_left;
+    if (typeof parsed.estimated_stop === 'number' && parsed.estimated_stop > 0) {
+        const remaining = parsed.estimated_stop - Math.floor(nowMs / 1000);
+        return remaining >= 0 ? remaining : null;
+    }
+    return null;
+}
+
 function summarize(parsed) {
     if (!parsed) return null;
     const devices = (parsed.devices || []).map(d => ({
@@ -32,7 +44,7 @@ function summarize(parsed) {
         progress: parsed.progress,
         candidate: (parsed.guess && parsed.guess.guess_base) || null,
         maskLen: maskLenFromGuess(parsed.guess),
-        etaSec: typeof parsed.time_left === 'number' ? parsed.time_left : null,
+        etaSec: etaSecFrom(parsed),
         devices,
     };
 }
