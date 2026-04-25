@@ -302,8 +302,13 @@ button:hover {
 .step-row--running { background-color: #fff7c2; }
 .step-row--running .step-row__icon {
     display: inline-block;
-    animation: rotate 1s linear infinite;
+    animation: spin 1s linear infinite;
     transform-origin: center;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
 }
 .step-row--done-hit { background-color: #dff7e9; }
 .step-row--done-miss { opacity: 0.65; }
