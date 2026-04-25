@@ -116,3 +116,19 @@ test('maskLen falls back to literal string length for non-mask candidates', () =
     });
     assert.strictEqual(s.maskLen, 7);
 });
+
+test('maskLen and candidate stay consistent when guess_mask differs from guess_base', () => {
+    // In -i brute-force mode hashcat emits the original mask under guess_mask
+    // and the current expanded slice under guess_base. The HUD displays
+    // guess_base as the candidate, so maskLen must derive from guess_base too
+    // — otherwise candidate and length disagree on screen.
+    const s = summarize({
+        progress: [0, 1], speed_total: 0, devices: [],
+        guess: {
+            guess_mask: '?1?1?1?1?1?1?1?1?1?1',  // original 10-token mask
+            guess_base: '?l?l?l?l?l',             // currently iterating length 5
+        },
+    });
+    assert.strictEqual(s.candidate, '?l?l?l?l?l');
+    assert.strictEqual(s.maskLen, 5);
+});

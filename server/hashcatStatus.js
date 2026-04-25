@@ -8,17 +8,18 @@ function parseStatusLine(line) {
     return obj;
 }
 
+// In --status-json mode hashcat emits both guess_mask (the ORIGINAL full mask,
+// e.g. "?1?1?1?1?1?1?1?1?1?1") and guess_base (the CURRENT expanded slice in
+// -i mode, e.g. "?l?l?l?l?l"). The HUD displays guess_base as the candidate,
+// so we derive maskLen from that exact string to keep the two consistent.
+// Human-readable status carries an explicit "[N]" suffix on guess_mask which
+// we still trust when present.
 function maskLenFromGuess(guess) {
     if (!guess) return null;
-    // Human-readable status: "?1?1?1?1?1 [5]" — bracket count is authoritative.
     const explicit = guess.guess_mask && guess.guess_mask.match(/\[(\d+)\]\s*$/);
     if (explicit) return Number(explicit[1]);
-    // --status-json: guess_mask / guess_base is the expanded mask string
-    // like "?l?l?l?l" (one ?X token per output char). Count "?" occurrences;
-    // fall through to literal length for combinator/dictionary candidates
-    // that have no mask tokens.
-    const str = (typeof guess.guess_mask === 'string' && guess.guess_mask) ||
-                (typeof guess.guess_base === 'string' && guess.guess_base) ||
+    const str = (typeof guess.guess_base === 'string' && guess.guess_base) ||
+                (typeof guess.guess_mask === 'string' && guess.guess_mask) ||
                 null;
     if (!str) return null;
     const tokens = (str.match(/\?/g) || []).length;
