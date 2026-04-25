@@ -11,6 +11,9 @@ venv/
 # Runtime artifacts
 server/hashcat/
 server/*.potfile
+server/src/md5fill_kv
+server/src/shard_sort
+server/tests/tmp/
 *.restore
 *.log
 

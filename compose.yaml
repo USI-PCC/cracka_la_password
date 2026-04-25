@@ -8,12 +8,20 @@ services:
     environment:
       - PORT=3100
       - HASHCAT_DEVICES=1,2;3,4
+      - PRECOMPUTE_KV_ENABLED=1
+      - PRECOMPUTE_KV_PATH=/scratch/cracka_kv
     ports:
       - "127.0.0.1:3100:3100"
     volumes:
       # Persist the hashcat potfile across restarts so previously cracked
       # hashes return instantly. hashcat 7.x default on Linux is XDG_DATA_HOME.
       - potfile:/root/.local/share/hashcat
+      # Pre-compute KV cache. Mounted read-write because the build
+      # script (precompute-build.sh) runs inside this same container and
+      # writes under /scratch/cracka_kv during the offline build phase.
+      # Safety: server code never opens the KV for writing — kvLookup.js
+      # uses fs.openSync(path, 'r') and server.js has no other KV path.
+      - /scratch/cracka_kv:/scratch/cracka_kv
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3100/index.html || exit 1"]
       interval: 30s
