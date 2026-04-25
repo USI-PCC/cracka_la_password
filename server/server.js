@@ -50,6 +50,11 @@ const nextDeviceSlot = () => {
 let sessionCounter = 0;
 const nextSession = () => `crk-${process.pid}-${++sessionCounter}`;
 
+// Status sampling cadence. Default raised from hashcat's "1 second" (which
+// stalls high-throughput MD5 cracking on modern GPUs) to 2 seconds. Tunable
+// via HASHCAT_STATUS_TIMER for trade-off between HUD freshness and speed.
+const statusTimer = String(Number(process.env.HASHCAT_STATUS_TIMER) || 2);
+
 const log = (message, ...args) => {
     const timestamp = new Date().toISOString();
     console.log(`\x1b[32m[${timestamp}]\x1b[0m\n${message}\n`, ...args);
@@ -80,16 +85,17 @@ app.use(express.static('public'));
 
 const wss = new WebSocket.Server({ server });
 
-function assignedDevicesForHello() {
-    // Show what slot WOULD be used; do not advance the cursor.
-    if (deviceSlots.length === 0) return null;
-    return deviceSlots[deviceCursor % deviceSlots.length];
-}
-
 log('WebSocket server created and attached to HTTP server.');
 
 wss.on('connection', (ws) => {
     log('New WebSocket client connected.');
+
+    // Lock this connection to a single GPU slot for its lifetime. Each
+    // operator (= one open page) owns their pair of GPUs across however
+    // many cracks they run; the badge they see always matches reality,
+    // and two concurrent operators never collide on the same GPUs.
+    const assignedDevices = nextDeviceSlot();
+    log('Connection assigned device slot: %s', assignedDevices);
 
     let currentHashcatProcess = null;
     let isCrackingCompleted = false;
@@ -107,8 +113,7 @@ wss.on('connection', (ws) => {
         }
 
         const hash = parsedMessage.hash;
-        const assignedDevices = nextDeviceSlot();
-        log('Received hash for cracking - Hash: %s', hash);
+        log('Received hash for cracking - Hash: %s (devices: %s)', hash, assignedDevices);
 
         if (!hash) {
             error('Request rejected - Missing hash parameter');
@@ -151,7 +156,7 @@ wss.on('connection', (ws) => {
                 '-1', '?l?u?d',
                 '--increment-min', '4',
                 '-i',
-                '--status', '--status-json', '--status-timer', '1',
+                '--status', '--status-json', '--status-timer', statusTimer,
                 hash,
                 '?1?1?1?1?1?1?1?1?1?1'
             ];
@@ -294,7 +299,7 @@ wss.on('connection', (ws) => {
                 '-a', '1',
                 '-w', '4',
                 '-O',
-                '--status', '--status-json', '--status-timer', '1',
+                '--status', '--status-json', '--status-timer', statusTimer,
                 hash,
                 'bruteforce.txt',
                 'bruteforce.txt'
@@ -335,7 +340,7 @@ wss.on('connection', (ws) => {
         currentHashcatProcess = null;
     });
 
-    send(ws, MESSAGE_KINDS.HELLO, { deviceSlot: assignedDevicesForHello(), dictSize });
+    send(ws, MESSAGE_KINDS.HELLO, { deviceSlot: assignedDevices, dictSize });
 });
 
 server.listen(port, () => {
