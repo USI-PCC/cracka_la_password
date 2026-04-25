@@ -322,22 +322,28 @@ wss.on('connection', (ws) => {
         });
     });
 
-    ws.on('close', () => {
-        log('WebSocket client disconnected.');
-        if (currentHashcatProcess && !currentHashcatProcess.killed && !isCrackingCompleted) {
+    // Mark the run as completed AND kill the live process. The flag is what
+    // makes the deferred dict→bf callback short-circuit: without it, killing
+    // the dict process triggers its on('close') → --show → onCloseCallback
+    // → startNextHashcatProcess(), spawning an orphan brute-force after the
+    // websocket is already gone.
+    const cleanupRun = (reason) => {
+        isCrackingCompleted = true;
+        if (currentHashcatProcess && !currentHashcatProcess.killed) {
             currentHashcatProcess.kill();
-            log('Terminated hashcat process due to client disconnection.');
+            log('Terminated hashcat process: %s', reason);
         }
         currentHashcatProcess = null;
+    };
+
+    ws.on('close', () => {
+        log('WebSocket client disconnected.');
+        cleanupRun('client disconnected');
     });
 
     ws.on('error', (err) => {
         error('WebSocket connection error: %s', err.message);
-        if (currentHashcatProcess && !currentHashcatProcess.killed && !isCrackingCompleted) {
-            currentHashcatProcess.kill();
-            log('Terminated hashcat process due to WebSocket error.');
-        }
-        currentHashcatProcess = null;
+        cleanupRun('websocket error');
     });
 
     send(ws, MESSAGE_KINDS.HELLO, { deviceSlot: assignedDevices, dictSize });
